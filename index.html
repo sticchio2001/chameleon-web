@@ -6,123 +6,152 @@
     <title>Chameleon Ultra Web Controller</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #0f172a; color: #f1f5f9; font-family: sans-serif; }
-        .terminal { background: #000; border: 1px solid #334155; height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; }
+        body { background-color: #0f172a; color: #f1f5f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .terminal { background: #000; border: 1px solid #334155; height: 300px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.85rem; border-radius: 8px; }
+        .btn-cmd { background: #334155; transition: all 0.2s; border: 1px solid #475569; }
+        .btn-cmd:hover { background: #475569; transform: translateY(-1px); }
+        .btn-cmd:active { transform: translateY(1px); }
     </style>
 </head>
-<body class="p-4">
+<body class="p-4 bg-slate-950">
 
-    <div class="max-w-md mx-auto">
+    <div class="max-w-lg mx-auto">
         <header class="mb-6 text-center">
-            <h1 class="text-2xl font-bold text-blue-400">Chameleon Ultra JS</h1>
-            <p class="text-sm text-slate-400">Web Bluetooth Interface</p>
+            <h1 class="text-3xl font-black text-blue-500 tracking-tight">CHAMELEON <span class="text-white">ULTRA</span></h1>
+            <p class="text-xs text-slate-500 uppercase tracking-widest mt-1">Web Bluetooth Interface</p>
         </header>
 
-        <div class="bg-slate-800 rounded-xl p-4 shadow-lg mb-4 border border-slate-700">
-            <div class="flex items-center justify-between mb-4">
-                <span id="status-dot" class="h-3 w-3 rounded-full bg-red-500"></span>
-                <span id="status-text" class="text-sm font-medium">Disconnesso</span>
-                <button id="connect-btn" class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg text-sm transition">
-                    Connetti
+        <div class="bg-slate-900 rounded-2xl p-5 shadow-2xl mb-6 border border-slate-800">
+            <div class="flex items-center justify-between">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span id="status-dot" class="h-3 w-3 rounded-full bg-red-500 animate-pulse"></span>
+                        <span id="status-text" class="text-lg font-bold">Disconnesso</span>
+                    </div>
+                    <p id="device-name" class="text-xs text-slate-500 mt-1">Nessun dispositivo rilevato</p>
+                </div>
+                <button id="connect-btn" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all">
+                    CONNETTI
                 </button>
             </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-2 mb-4">
-            <button onclick="sendCommand('01')" class="bg-slate-700 p-3 rounded-lg hover:bg-slate-600 text-sm italic">Get Version</button>
-            <button onclick="sendCommand('02')" class="bg-slate-700 p-3 rounded-lg hover:bg-slate-600 text-sm italic">Battery Level</button>
+        <div class="grid grid-cols-2 gap-3 mb-6">
+            <button onclick="sendChameleonCommand(1000)" class="btn-cmd p-4 rounded-xl text-sm font-semibold text-blue-300">
+                📄 Get Version
+            </button>
+            <button onclick="sendChameleonCommand(1002)" class="btn-cmd p-4 rounded-xl text-sm font-semibold text-green-300">
+                🔋 Battery Level
+            </button>
+            <button onclick="sendChameleonCommand(1001)" class="btn-cmd p-4 rounded-xl text-sm font-semibold text-purple-300">
+                🆔 Get Git Info
+            </button>
+            <button onclick="clearLog()" class="btn-cmd p-4 rounded-xl text-sm font-semibold text-slate-400">
+                🗑️ Clear Terminal
+            </button>
         </div>
 
-        <div class="terminal rounded-lg p-3 mb-4" id="terminal">
-            <div class="text-blue-300 font-bold border-b border-slate-800 mb-1">--- Terminal Log ---</div>
+        <div class="relative">
+            <div class="terminal p-4 shadow-inner" id="terminal">
+                <div class="text-blue-900 font-bold mb-2 uppercase text-[10px] tracking-widest">System Logs Output</div>
+            </div>
         </div>
-
-        <button onclick="clearLog()" class="text-xs text-slate-500 underline w-full text-right">Cancella Log</button>
+        
+        <p class="text-[10px] text-slate-600 mt-4 text-center italic">
+            Assicurati che il Bluetooth sia attivo e Bluefy abbia i permessi necessari.
+        </p>
     </div>
 
     <script>
-        // UUID Standard per Nordic UART Service (utilizzato dal Chameleon)
-        const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-        const TX_CHARACTERISTIC_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // Scrittura
-        const RX_CHARACTERISTIC_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // Notifiche
+        const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const TX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+        const RX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-        let device, gattServer, txChar, rxChar;
+        let device, txChar, rxChar;
 
-        const connectBtn = document.getElementById('connect-btn');
-        const statusText = document.getElementById('status-text');
-        const statusDot = document.getElementById('status-dot');
-        const terminal = document.getElementById('terminal');
+        const btn = document.getElementById('connect-btn');
+        const stText = document.getElementById('status-text');
+        const stDot = document.getElementById('status-dot');
+        const term = document.getElementById('terminal');
 
         function log(msg, type = 'info') {
-            const time = new Date().toLocaleTimeString().split(' ')[0];
-            const color = type === 'in' ? 'text-green-400' : (type === 'out' ? 'text-yellow-400' : 'text-slate-400');
-            terminal.innerHTML += `<div class="${color}">[${time}] ${msg}</div>`;
-            terminal.scrollTop = terminal.scrollHeight;
+            const colors = {
+                in: 'text-emerald-400',
+                out: 'text-amber-400',
+                error: 'text-red-500 font-bold',
+                info: 'text-slate-400'
+            };
+            const div = document.createElement('div');
+            div.className = colors[type] || 'text-slate-300';
+            div.innerHTML = `<span class="opacity-50 text-[10px] mr-2">${new Date().toLocaleTimeString().split(' ')[0]}</span> ${msg}`;
+            term.appendChild(div);
+            term.scrollTop = term.scrollHeight;
         }
 
         async function connect() {
             try {
-                log("Ricerca dispositivo...");
+                log("Avvio scansione...");
                 device = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'Chameleon' }],
-                    optionalServices: [UART_SERVICE_UUID]
+                    optionalServices: [SERVICE_UUID]
                 });
 
-                log(`Trovato: ${device.name}`);
-                statusText.innerText = "Connessione...";
-                
-                gattServer = await device.gatt.connect();
-                const service = await gattServer.getPrimaryService(UART_SERVICE_UUID);
-                
-                txChar = await service.getCharacteristic(TX_CHARACTERISTIC_UUID);
-                rxChar = await service.getCharacteristic(RX_CHARACTERISTIC_UUID);
+                stText.innerText = "Sincronizzazione...";
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+                txChar = await service.getCharacteristic(TX_UUID);
+                rxChar = await service.getCharacteristic(RX_UUID);
 
-                // Abilita le notifiche per ricevere dati
                 await rxChar.startNotifications();
-                rxChar.addEventListener('characteristicvaluechanged', handleNotifications);
+                rxChar.addEventListener('characteristicvaluechanged', (e) => {
+                    const val = new Uint8Array(e.target.value.buffer);
+                    const hex = Array.from(val).map(b => b.toString(16).padStart(2, '0')).join(' ');
+                    log(`<- RECV: ${hex}`, 'in');
+                });
 
-                statusText.innerText = "Connesso";
-                statusDot.classList.replace('bg-red-500', 'bg-green-500');
-                connectBtn.innerText = "Disconnetti";
-                log("Comunicazione BLE Pronta!", 'info');
+                stText.innerText = "Online";
+                stDot.classList.replace('bg-red-500', 'bg-green-500');
+                stDot.classList.remove('animate-pulse');
+                document.getElementById('device-name').innerText = device.name;
+                btn.innerText = "DISCONNETTI";
+                log("Connessione stabilita con successo!", "info");
 
-            } catch (error) {
-                log("Errore: " + error, 'error');
-                statusText.innerText = "Errore";
+            } catch (err) {
+                log("Errore: " + err.message, "error");
+                stText.innerText = "Disconnesso";
             }
         }
 
-        function handleNotifications(event) {
-            let value = event.target.value;
-            let decoder = new TextDecoder('utf-8');
-            // Nota: Chameleon usa pacchetti binari, qui lo mostriamo come Hex
-            let hex = Array.from(new Uint8Array(value.buffer))
-                           .map(b => b.toString(16).padStart(2, '0'))
-                           .join(' ');
-            log(`<- ${hex}`, 'in');
-        }
+        async function sendChameleonCommand(cmdId, dataArray = []) {
+            if (!txChar) return log("Connetti il dispositivo prima!", "error");
 
-        async function sendCommand(hexStr) {
-            if (!txChar) return log("Non connesso!", 'error');
+            // Formato Frame Chameleon: Header(2) + Cmd(2) + Len(2) + Data(n) + LRC(1)
+            const header = [0x11, 0xEF];
+            const cmd = [cmdId & 0xFF, (cmdId >> 8) & 0xFF];
+            const len = [dataArray.length & 0xFF, (dataArray.length >> 8) & 0xFF];
             
-            // Converte stringa hex in buffer
-            const bytes = new Uint8Array(hexStr.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-            await txChar.writeValue(bytes);
-            log(`-> ${hexStr}`, 'out');
+            let frame = [...header, ...cmd, ...len, ...dataArray];
+            
+            // Calcolo Checksum (LRC)
+            let lrc = 0;
+            for (let byte of frame) lrc ^= byte;
+            frame.push(lrc);
+
+            const buffer = new Uint8Array(frame);
+            await txChar.writeValue(buffer);
+            log(`-> SEND CMD ${cmdId}: ${Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join(' ')}`, "out");
         }
 
-        connectBtn.addEventListener('click', () => {
-            if (device && device.gatt.connected) {
+        btn.addEventListener('click', () => {
+            if (device?.gatt.connected) {
                 device.gatt.disconnect();
-                statusText.innerText = "Disconnesso";
-                statusDot.classList.replace('bg-green-500', 'bg-red-500');
-                connectBtn.innerText = "Connetti";
+                location.reload(); // Reset semplice
             } else {
                 connect();
             }
         });
 
-        function clearLog() { terminal.innerHTML = ""; }
+        function clearLog() { term.innerHTML = ''; }
     </script>
 </body>
 </html>
