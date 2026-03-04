@@ -2,49 +2,45 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Microel Pro - FIX DEFINITIVO</title>
+    <title>Microel Pro - Chameleon Ultra Ultimate Fix</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-[#0d1117] text-[#c9d1d9] font-mono p-4">
-    <div class="max-w-xl mx-auto border border-slate-700 p-6 rounded-lg bg-black">
-        <h1 class="text-blue-500 font-black mb-4">CHAMELEON ULTRA > PROTOCOL FIX</h1>
+<body class="bg-slate-950 text-slate-200 font-mono p-4">
+    <div class="max-w-xl mx-auto border border-slate-800 p-6 rounded-2xl bg-slate-900 shadow-2xl">
+        <h1 class="text-blue-400 font-black text-center mb-6 tracking-tighter text-2xl italic">CHAMELEON ULTRA CORE</h1>
         
-        <div class="flex gap-2 mb-6">
-            <button id="btnConnect" class="bg-blue-600 px-4 py-2 rounded font-bold text-white hover:bg-blue-500">1. CONNETTI</button>
-            <button id="btnScan" class="bg-red-600 px-4 py-2 rounded font-bold text-white hover:bg-red-500" disabled>2. SCAN (LED BIANCO)</button>
+        <div class="flex gap-4 mb-8">
+            <button id="connect" class="flex-1 bg-slate-800 border border-slate-700 p-4 rounded-xl font-bold hover:bg-slate-700 transition-all">1. CONNETTI</button>
+            <button id="scan" class="flex-1 bg-blue-600 p-4 rounded-xl font-black text-white hover:bg-blue-500 shadow-lg shadow-blue-900/20 disabled:opacity-20" disabled>2. SCAN (LED BIANCO)</button>
         </div>
 
-        <div class="space-y-4">
-            <div class="bg-zinc-900 p-4 rounded border border-zinc-800">
-                <div class="text-xs text-zinc-500 uppercase">UID TESSERA</div>
-                <div id="uid-val" class="text-2xl font-bold text-white">-- -- -- --</div>
+        <div class="grid grid-cols-1 gap-4 mb-8">
+            <div class="bg-black/50 p-4 rounded-xl border border-slate-800">
+                <div class="text-[10px] text-slate-500 font-bold uppercase mb-1">UID Rilevato</div>
+                <div id="uid-out" class="text-2xl font-mono text-white tracking-widest">-- -- -- --</div>
             </div>
-            <div class="bg-zinc-900 p-4 rounded border border-zinc-800">
-                <div class="text-xs text-zinc-500 uppercase">MICROEL KEY A</div>
-                <div id="key-val" class="text-2xl font-bold text-orange-500">-- -- -- -- -- --</div>
+            <div class="bg-black/50 p-4 rounded-xl border border-slate-800">
+                <div class="text-[10px] text-slate-500 font-bold uppercase mb-1">Chiave Microel A</div>
+                <div id="key-out" class="text-2xl font-mono text-orange-500 tracking-widest">-- -- -- -- -- --</div>
             </div>
         </div>
 
-        <div id="log" class="mt-6 h-40 overflow-y-auto text-[10px] text-zinc-400 bg-zinc-950 p-2 border border-zinc-800">
-            Console pronta.
+        <div id="log" class="h-32 overflow-y-auto text-[10px] text-emerald-500/70 bg-black p-3 rounded-lg border border-slate-800 font-light">
+            In attesa di azione...
         </div>
     </div>
 
 <script>
-const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-const TX_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-const RX_UUID      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+let tx, rx;
 
-let tx, rx, device;
-
-function log(m) {
+const log = m => {
     const l = document.getElementById('log');
     l.innerHTML += `<div>> ${m}</div>`;
     l.scrollTop = l.scrollHeight;
-}
+};
 
-// Formula Microel Key A (Tua originale)
-function getMicroelKey(uid) {
+// Formula Microel (la tua)
+function deriveKey(uid) {
     let sum = uid.reduce((a, b) => a + b, 0) & 0xFF;
     let b7 = (sum >> 4) & 0x0F, b8 = sum & 0x0F;
     let cond = (b7==0||(b7==1&&b8!=15)||b7==4||(b7==5&&b8!=15)||b7==8||(b7==9&&b8!=15)||b7==12||(b7==13&&b8!=15)||sum==63||sum==127||sum==191||sum==255);
@@ -54,68 +50,63 @@ function getMicroelKey(uid) {
 
 async function connect() {
     try {
-        device = await navigator.bluetooth.requestDevice({
+        const device = await navigator.bluetooth.requestDevice({
             filters: [{ namePrefix: 'Chameleon' }],
-            optionalServices: [SERVICE_UUID]
+            optionalServices: ['6e400001-b5a3-f393-e0a9-e50e24dcca9e']
         });
         const server = await device.gatt.connect();
-        const service = await server.getPrimaryService(SERVICE_UUID);
-        tx = await service.getCharacteristic(TX_UUID);
-        rx = await service.getCharacteristic(RX_UUID);
+        const svc = await server.getPrimaryService('6e400001-b5a3-f393-e0a9-e50e24dcca9e');
+        tx = await svc.getCharacteristic('6e400002-b5a3-f393-e0a9-e50e24dcca9e');
+        rx = await svc.getCharacteristic('6e400003-b5a3-f393-e0a9-e50e24dcca9e');
         
         await rx.startNotifications();
-        rx.oncharacteristicvaluechanged = (e) => {
-            const val = new Uint8Array(e.target.value.buffer);
-            // Se è una risposta di SCAN (1014) e contiene dati (> 6 byte header)
-            if (val[0] === 0x11 && val[2] === 0x14 && val.length > 6) {
-                const uid = Array.from(val.slice(6, 10));
+        rx.oncharacteristicvaluechanged = e => {
+            const buf = new Uint8Array(e.target.value.buffer);
+            // Risposta SCAN: Header 0x11 0xEF + CMD 0x14 0x10
+            if (buf[0] === 0x11 && buf[2] === 0x14 && buf.length > 6) {
+                const uid = Array.from(buf.slice(6, 10));
                 const uidHex = uid.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
-                document.getElementById('uid-val').innerText = uidHex;
-                
-                const key = getMicroelKey(uid);
-                document.getElementById('key-val').innerText = key.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
-                log("TAG RILEVATO: " + uidHex);
+                document.getElementById('uid-out').innerText = uidHex;
+                const key = deriveKey(uid);
+                document.getElementById('key-out').innerText = key.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+                log("TAG TROVATO!");
             }
         };
-
         log("CONNESSO.");
-        document.getElementById('btnScan').disabled = false;
+        document.getElementById('scan').disabled = false;
     } catch (e) { log("ERR: " + e.message); }
 }
 
-async function sendRaw(cmdId, data = []) {
-    // Protocollo binario Chameleon: 0x11 0xEF | CMD(2) | LEN(2) | DATA | LRC
-    const head = new Uint8Array([0x11, 0xEF, cmdId & 0xFF, (cmdId >> 8) & 0xFF, data.length & 0xFF, (data.length >> 8) & 0xFF]);
-    const pkt = new Uint8Array(head.length + data.length + 1);
-    pkt.set(head);
-    pkt.set(data, head.length);
+async function sendCmd(cmdId, data = []) {
+    // 1. Costruzione pacchetto (Header + CMD + LEN + DATA)
+    const pkt = new Uint8Array(6 + data.length + 1);
+    pkt[0] = 0x11; pkt[1] = 0xEF; // SOP
+    pkt[2] = cmdId & 0xFF; pkt[3] = (cmdId >> 8) & 0xFF; // CMD ID
+    pkt[4] = data.length & 0xFF; pkt[5] = (data.length >> 8) & 0xFF; // DATA LEN
+    pkt.set(data, 6);
     
-    // LRC: XOR di tutti i byte
+    // 2. Calcolo LRC (XOR di tutti i byte tranne l'ultimo)
     let lrc = 0;
     for (let i = 0; i < pkt.length - 1; i++) lrc ^= pkt[i];
     pkt[pkt.length - 1] = lrc;
 
+    // 3. Invio (writeValue senza risposta per evitare timeout BLE di Windows)
     await tx.writeValueWithoutResponse(pkt);
 }
 
-async function doScan() {
-    log("Inizializzazione... (LED Bianco dovrebbe accendersi)");
+async function startScan() {
+    log("Inizializzazione PN7160...");
     try {
-        // Sequenza esatta dal link taichunmin:
-        // 1. SET_READER_MODE (1000) attivo
-        await sendRaw(1000, [0x01]);
+        // Sequenza ufficiale chameleon-ultra.js
+        await sendCmd(1000, [0x01]); // SET_READER_MODE ON
         await new Promise(r => setTimeout(r, 50));
-        
-        // 2. HF_14443A_SCAN (1014) con parametro 0x01 (Single/Continuous Poll)
-        // Questo comando abilita il chip radio PN7160
-        await sendRaw(1014, [0x01]);
-        
-        log("Antenna Attiva. Avvicina Tag.");
+        await sendCmd(1014, [0x01]); // HF_14443A_SCAN (Questo attiva il LED)
+        log("LED BIANCO ATTIVO. Avvicina tessera.");
     } catch (e) { log("ERR SCAN: " + e.message); }
 }
 
-document.getElementById('btnConnect').onclick = connect;
-document.getElementById('btnScan').onclick = doScan;
+document.getElementById('connect').onclick = connect;
+document.getElementById('scan').onclick = startScan;
 </script>
 </body>
 </html>
