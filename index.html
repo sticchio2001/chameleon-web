@@ -2,31 +2,28 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Chameleon Ultra - Deep Level Reader</title>
+    <title>Chameleon Ultra - CLI MODE</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-black text-white font-mono p-4">
-    <div class="max-w-md mx-auto">
-        <h1 class="text-red-500 font-bold border-b border-red-900 mb-4 uppercase italic">Chameleon Ultra Force-Link</h1>
+<body class="bg-black text-green-400 font-mono p-4">
+    <div class="max-w-md mx-auto border border-green-900 p-6 shadow-[0_0_20px_rgba(0,255,0,0.2)]">
+        <h1 class="text-center text-xl font-bold mb-6 border-b border-green-900 pb-2">CLI TERMINAL MODE</h1>
 
-        <div class="bg-zinc-900 p-4 rounded border border-zinc-800 mb-4">
-            <button id="btn-conn" class="w-full bg-blue-700 p-4 rounded font-black mb-4 uppercase">1. Collega Bluetooth</button>
-            <button onclick="totalResetAndScan()" class="w-full bg-red-600 p-4 rounded font-black text-xl shadow-[0_0_20px_rgba(255,0,0,0.4)]">2. FORZA LETTURA (LED)</button>
+        <button id="btn-conn" class="w-full bg-green-900 text-white p-4 rounded mb-4 font-bold border border-green-400">
+            1. COLLEGA DISPOSITIVO
+        </button>
+        
+        <button onclick="sendCLI()" class="w-full bg-blue-900 text-white p-4 rounded font-black mb-6 border border-blue-400">
+            2. AVVIA LETTURA (LED BIANCO)
+        </button>
+
+        <div id="log" class="bg-black h-64 overflow-y-auto p-2 text-xs border border-green-900 mb-4">
+            In attesa di connessione BLE...
         </div>
 
-        <div class="grid grid-cols-1 gap-2 mb-4">
-            <div class="bg-zinc-900 p-4 rounded border border-zinc-700">
-                <span class="text-[10px] text-zinc-500 uppercase">Dati Ricevuti (HEX)</span>
-                <div id="hex-out" class="text-green-500 break-all text-xs mt-2">--</div>
-            </div>
-            <div class="bg-zinc-900 p-4 rounded border border-zinc-700">
-                <span class="text-[10px] text-zinc-500 uppercase">UID Identificato</span>
-                <div id="uid-out" class="text-blue-400 font-bold text-xl tracking-tighter">-- -- -- --</div>
-            </div>
-        </div>
-
-        <div id="console" class="bg-black border border-zinc-800 h-48 overflow-y-auto p-2 text-[10px] text-zinc-500">
-            Console pronta...
+        <div class="bg-zinc-900 p-4 rounded">
+            <span class="text-[10px] text-zinc-500 uppercase">UID Rilevato:</span>
+            <div id="uid-res" class="text-white text-lg font-bold">-- -- -- --</div>
         </div>
     </div>
 
@@ -36,11 +33,12 @@
         const RX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
         let txChar;
+        let decoder = new TextDecoder();
 
         function log(m) {
-            const c = document.getElementById('console');
-            c.innerHTML += `<div>> ${m}</div>`;
-            c.scrollTop = c.scrollHeight;
+            const l = document.getElementById('log');
+            l.innerHTML += `<div>> ${m}</div>`;
+            l.scrollTop = l.scrollHeight;
         }
 
         async function connect() {
@@ -50,63 +48,43 @@
                     optionalServices: [SVC]
                 });
                 const server = await dev.gatt.connect();
-                const service = await server.getPrimaryService(SVC);
-                txChar = await service.getCharacteristic(TX);
-                const rx = await service.getCharacteristic(RX);
+                const svc = await server.getPrimaryService(SVC);
+                txChar = await svc.getCharacteristic(TX);
+                const rx = await svc.getCharacteristic(RX);
 
                 await rx.startNotifications();
                 rx.oncharacteristicvaluechanged = (e) => {
-                    const b = new Uint8Array(e.target.value.buffer);
-                    const hex = Array.from(b).map(x => x.toString(16).padStart(2,'0')).join('').toUpperCase();
-                    document.getElementById('hex-out').innerText = hex;
-                    log("Ricevuto: " + hex);
+                    let msg = decoder.decode(e.target.value);
+                    log("RX: " + msg.trim());
                     
-                    // Se troviamo l'header di risposta 11EF e il comando 14 (Scan)
-                    if (hex.includes("11EF14")) {
-                        const idx = hex.indexOf("11EF14");
-                        const uid = hex.substring(idx + 12, idx + 20);
-                        document.getElementById('uid-out').innerText = uid.match(/.{1,2}/g).join(' ');
+                    // Se nella risposta testuale appare un UID
+                    if (msg.includes("UID:")) {
+                        let match = msg.match(/UID:\s*([0-9A-Fa-f\s]+)/);
+                        if(match) document.getElementById('uid-res').innerText = match[1].trim();
                     }
                 };
-                log("CONNESSO.");
-            } catch (err) { log("ERR: " + err.message); }
+                log("CONNESSO IN MODALITÀ TESTUALE.");
+            } catch (err) { log("ERRORE: " + err.message); }
         }
 
-        // FUNZIONE CRITICA: Invia i byte uno alla volta con micro-ritardi
-        // Questo impedisce a Windows di corrompere il pacchetto seriale
-        async function sendAtomic(hex) {
-            const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(h => parseInt(h, 16)));
-            for (let b of bytes) {
-                await txChar.writeValueWithoutResponse(new Uint8Array([b]));
-                // Ritardo minimo tra i byte (essenziale per alcuni firmware)
-                await new Promise(r => setTimeout(r, 2)); 
-            }
-            log("Inviato: " + hex);
-        }
-
-        async function totalResetAndScan() {
-            if (!txChar) return alert("Connetti prima!");
-
+        async function sendCLI() {
+            if (!txChar) return;
+            
+            log("INVIO COMANDI CLI...");
             try {
-                log("ESEGUO HARD RESET PROTOCOLLO...");
-                
-                // 1. Pulisci il canale (Wake-up)
-                await txChar.writeValueWithoutResponse(new Uint8Array([0x00, 0x00, 0x00]));
-                await new Promise(r => setTimeout(r, 300));
+                // Invia i comandi testuali seguiti da a capo (\r\n)
+                // hf mf cscan è il comando ufficiale per lo scan Mifare
+                const commands = [
+                    "hf mf cscan\r\n"
+                ];
 
-                // 2. CMD_GET_APP_VERSION (Test se risponde)
-                await sendAtomic("11EF010000001E");
-                await new Promise(r => setTimeout(r, 300));
-
-                // 3. SET_READER_MODE (Forza modo lettura)
-                await sendAtomic("11EFE803010001F5");
-                await new Promise(r => setTimeout(r, 300));
-
-                // 4. HF_SCAN (Accende il LED)
-                log("ATTIVAZIONE ANTENNA (LED BIANCO)...");
-                await sendAtomic("11EFF603010001E7");
-
-            } catch (e) { log("ERRORE: " + e.message); }
+                for (let cmd of commands) {
+                    let encoder = new TextEncoder();
+                    await txChar.writeValue(encoder.encode(cmd));
+                    log("TX: " + cmd.trim());
+                    await new Promise(r => setTimeout(r, 500));
+                }
+            } catch (e) { log("ERRORE TX: " + e.message); }
         }
 
         document.getElementById('btn-conn').onclick = connect;
