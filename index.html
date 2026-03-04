@@ -6,8 +6,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', monospace; }
-        .terminal { background: #000; border: 1px solid #30363d; height: 180px; overflow-y: auto; font-size: 11px; color: #8b949e; }
+        .terminal { background: #000; border: 1px solid #30363d; height: 250px; overflow-y: auto; font-size: 11px; color: #8b949e; }
         .box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+        .data-card { background: #0d1117; border-left: 4px solid #238636; }
     </style>
 </head>
 <body class="p-6">
@@ -16,10 +17,25 @@
             <h1 class="text-2xl font-bold text-blue-500 italic">
                 MICROEL <span class="text-white font-light">ULTRA</span>
             </h1>
-            <button id="btn-connect"
-                class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold transition-all shadow-lg">
-                CONNETTI
-            </button>
+            <div class="space-x-2">
+                <button id="btn-connect" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold transition-all shadow-lg">
+                    CONNETTI
+                </button>
+                <button id="btn-scan" class="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg font-bold transition-all shadow-lg opacity-50 cursor-not-allowed" disabled>
+                    LEGGI TESSERA
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <div class="box p-4">
+                <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">UID Rilevato</div>
+                <div id="uid-val" class="text-xl font-mono text-blue-400">-- -- -- --</div>
+            </div>
+            <div class="box p-4">
+                <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Microel Key A</div>
+                <div id="key-val" class="text-xl font-mono text-orange-400">-- -- -- -- -- --</div>
+            </div>
         </div>
 
         <div id="terminal" class="terminal p-4 rounded-lg shadow-inner">
@@ -30,98 +46,113 @@
     </div>
 
 <script>
-/* =========================
-   UUID Nordic UART Service
-   ========================= */
 const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const TX_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 const RX_UUID      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-let device = null;
-let tx = null;
-let rx = null;
+let device = null, tx = null, rx = null;
 
-/* =========================
-   LOG
-   ========================= */
 function log(msg, color = "text-slate-400") {
     const term = document.getElementById('terminal');
     term.innerHTML += `<div class="${color}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
     term.scrollTop = term.scrollHeight;
 }
 
-/* =========================
-   CONNESSIONE BLE
-   ========================= */
+// Calcolo Checksum LRC richiesto dal Chameleon
+function calcLRC(data) {
+    return data.reduce((acc, byte) => acc ^ byte, 0);
+}
+
+// Funzione Microel per derivare la chiave A dall'UID
+function deriveMicroelKey(uidArr) {
+    let sum = uidArr.reduce((a, b) => a + b, 0) & 0xFF;
+    let b7 = (sum >> 4) & 0x0F, b8 = sum & 0x0F;
+    let cond = (b7==0||(b7==1&&b8!=15)||b7==4||(b7==5&&b8!=15)||b7==8||(b7==9&&b8!=15)||b7==12||(b7==13&&b8!=15)||sum==63||sum==127||sum==191||sum==255);
+    let k = cond ? (sum + 1) : (sum + 65);
+    return [k, k^0x93, k^0xA6, k^0x74, k^0x2A, k^0xF8];
+}
+
 async function connect() {
     try {
-        if (!navigator.bluetooth) {
-            throw new Error("Web Bluetooth non supportato su questo browser");
-        }
-
         log("Richiesta dispositivo...", "text-yellow-400");
-
         device = await navigator.bluetooth.requestDevice({
-            acceptAllDevices: true,
+            filters: [{ namePrefix: 'Chameleon' }],
             optionalServices: [SERVICE_UUID]
         });
 
-        device.addEventListener('gattserverdisconnected', () => {
-            log("Dispositivo disconnesso", "text-red-400");
-            tx = null;
-            rx = null;
-        });
-
         const server = await device.gatt.connect();
-        log("Connesso al GATT server", "text-green-400");
-
         const service = await server.getPrimaryService(SERVICE_UUID);
-        log("Servizio UART trovato", "text-green-400");
-
         tx = await service.getCharacteristic(TX_UUID);
         rx = await service.getCharacteristic(RX_UUID);
 
         await rx.startNotifications();
-
-        rx.addEventListener('characteristicvaluechanged', (event) => {
-            const value = new Uint8Array(event.target.value);
-            const hex = [...value]
-                .map(b => b.toString(16).padStart(2, '0'))
-                .join(' ')
-                .toUpperCase();
-            log("<- RX: " + hex, "text-blue-400");
-        });
+        rx.addEventListener('characteristicvaluechanged', handleNotifications);
 
         log("BLE PRONTO", "text-blue-500 font-bold");
+        document.getElementById('btn-scan').disabled = false;
+        document.getElementById('btn-scan').classList.remove('opacity-50', 'cursor-not-allowed');
+        document.getElementById('btn-connect').innerText = "CONNESSO";
 
     } catch (error) {
         log("ERRORE: " + error.message, "text-red-500");
     }
 }
 
-/* =========================
-   INVIO DATI
-   ========================= */
-async function send(dataArray) {
-    if (!tx) {
-        log("Non connesso!", "text-red-400");
-        return;
-    }
+async function sendCmd(cmdId, data = []) {
+    if (!tx) return;
+    // Pacchetto: 0x11 0xEF | CMD_L CMD_H | LEN_L LEN_H | DATA... | LRC
+    let frame = [0x11, 0xEF, cmdId & 0xFF, (cmdId >> 8) & 0xFF, data.length & 0xFF, (data.length >> 8) & 0xFF, ...data];
+    frame.push(calcLRC(frame));
+    
+    await tx.writeValueWithoutResponse(new Uint8Array(frame));
+}
 
+async function startScan() {
+    log("Inizializzazione Scan Mifare...", "text-white");
     try {
-        const data = new Uint8Array(dataArray);
-        await tx.writeValueWithoutResponse(data);
-        log("-> TX: " + [...data].map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase(), "text-purple-400");
+        // 1. Imposta Reader Mode (CMD 1000)
+        await sendCmd(1000, [0x01]);
+        await new Promise(r => setTimeout(r, 100));
+
+        // 2. Accendi Antenna (CMD 1008)
+        await sendCmd(1008, [0x01]);
+        await new Promise(r => setTimeout(r, 100));
+
+        // 3. Scan ISO14443A (CMD 1014) - Dovrebbe accendere il LED BIANCO
+        await sendCmd(1014, [0x01]);
+        log("Antenna attiva. Avvicina il tag.", "text-green-500");
     } catch (err) {
-        log("Errore invio: " + err.message, "text-red-400");
+        log("Errore durante lo scan: " + err.message, "text-red-400");
     }
 }
 
-/* =========================
-   EVENT LISTENER
-   ========================= */
-document.getElementById('btn-connect').addEventListener('click', connect);
-</script>
+function handleNotifications(event) {
+    const val = new Uint8Array(event.target.value.buffer);
+    const hex = [...val].map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase();
+    
+    // Rilevamento risposta Scan (CMD 1014 ha ID 0x14 0x10 nei byte 2 e 3)
+    if (val[0] === 0x11 && val[2] === 0x14) {
+        if (val.length > 10) { // Se ci sono dati oltre l'header
+            const uid = Array.from(val.slice(6, 10));
+            const uidHex = uid.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+            
+            document.getElementById('uid-val').innerText = uidHex;
+            
+            // Calcola e mostra la chiave Microel
+            const key = deriveMicroelKey(uid);
+            document.getElementById('key-val').innerText = key.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+            
+            log("TESSERA RILEVATA: " + uidHex, "text-green-400 font-bold");
+        } else {
+            log("Nessun tag nel campo.", "text-zinc-500");
+        }
+    } else {
+        log("<- RX: " + hex, "text-blue-400");
+    }
+}
 
+document.getElementById('btn-connect').addEventListener('click', connect);
+document.getElementById('btn-scan').addEventListener('click', startScan);
+</script>
 </body>
 </html>
