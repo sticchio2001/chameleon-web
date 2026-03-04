@@ -2,37 +2,37 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Microel Pro - Chameleon Desktop v5</title>
+    <title>Microel Pro - Chameleon Ultra Fix</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', monospace; }
-        .terminal { background: #000; border: 1px solid #30363d; height: 180px; overflow-y: auto; font-size: 11px; color: #8b949e; }
+        .terminal { background: #000; border: 1px solid #30363d; height: 200px; overflow-y: auto; font-size: 11px; color: #8b949e; }
         .box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
     </style>
 </head>
 <body class="p-6">
     <div class="max-w-2xl mx-auto">
-        <div class="flex justify-between items-center mb-6 text-blue-500 italic font-bold text-2xl">
-            MICROEL <span class="text-white font-light">ULTRA SCAN</span>
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold text-blue-500 italic">MICROEL <span class="text-white font-light">ULTRA</span></h1>
             <div class="flex gap-2">
-                <button id="btn-connect" class="bg-blue-600 text-sm hover:bg-blue-500 text-white px-4 py-2 rounded font-bold transition-all">CONNETTI</button>
-                <button id="btn-scan" class="bg-red-600 text-sm hover:bg-red-500 text-white px-4 py-2 rounded font-bold transition-all disabled:opacity-20" disabled>ATTIVA LED SCAN</button>
+                <button id="btn-connect" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold transition-all">CONNETTI</button>
+                <button id="btn-read" class="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded-lg font-black transition-all disabled:opacity-30" disabled>LEGGI (LED BIANCO)</button>
             </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4 mb-4">
-            <div class="box p-4 border border-blue-900">
-                <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">UID</div>
-                <div id="uid-display" class="text-xl font-mono text-white tracking-widest">-- -- -- --</div>
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <div class="box p-4 border-l-4 border-blue-600 shadow-xl">
+                <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">UID TESSERA</div>
+                <div id="uid-val" class="text-2xl font-mono text-white tracking-widest">-- -- -- --</div>
             </div>
-            <div class="box p-4 border border-orange-900">
-                <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Microel Key A</div>
-                <div id="key-display" class="text-xl font-mono text-orange-400">-- -- -- -- -- --</div>
+            <div class="box p-4 border-l-4 border-orange-600 shadow-xl">
+                <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">CHIAVE MICROEL A</div>
+                <div id="key-val" class="text-2xl font-mono text-orange-400">-- -- -- -- -- --</div>
             </div>
         </div>
 
-        <div id="terminal" class="terminal p-4 rounded-lg">
-            <div class="text-yellow-600 italic text-[9px] mb-2">System Log</div>
+        <div id="terminal" class="terminal p-4 rounded-lg shadow-inner">
+            <div class="text-yellow-600 italic uppercase text-[9px] mb-2 tracking-widest">System Log</div>
         </div>
     </div>
 
@@ -41,7 +41,7 @@ const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const TX_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 const RX_UUID      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-let tx = null;
+let txChar = null;
 
 function log(msg, color = "text-slate-400") {
     const term = document.getElementById('terminal');
@@ -49,12 +49,12 @@ function log(msg, color = "text-slate-400") {
     term.scrollTop = term.scrollHeight;
 }
 
-// Calcolo LRC (Checksum) corretto secondo specifica Chameleon
-function calcLRC(pkt) {
-    return pkt.reduce((acc, b) => acc ^ b, 0);
+// Calcolo LRC (XOR Checksum)
+function calcLRC(data) {
+    return data.reduce((acc, byte) => acc ^ byte, 0);
 }
 
-// Funzione Microel Key A
+// Formula Microel Key A
 function getMicroelKey(uid) {
     let sum = uid.reduce((a, b) => a + b, 0) & 0xFF;
     let b7 = (sum >> 4) & 0x0F, b8 = sum & 0x0F;
@@ -71,59 +71,57 @@ async function connect() {
         });
         const server = await device.gatt.connect();
         const service = await server.getPrimaryService(SERVICE_UUID);
-        tx = await service.getCharacteristic(TX_UUID);
+        txChar = await service.getCharacteristic(TX_UUID);
         const rx = await service.getCharacteristic(RX_UUID);
+
         await rx.startNotifications();
-        rx.oncharacteristicvaluechanged = handleRx;
-        
-        log("CONNESSO AL DISPOSITIVO", "text-green-500 font-bold");
-        document.getElementById('btn-scan').disabled = false;
+        rx.oncharacteristicvaluechanged = handleData;
+
+        log("DISPOSITIVO CONNESSO", "text-green-400 font-bold");
+        document.getElementById('btn-read').disabled = false;
+        document.getElementById('btn-connect').innerText = "ONLINE";
     } catch (e) { log("ERRORE: " + e.message, "text-red-500"); }
 }
 
-async function sendFrame(cmd, data = []) {
-    // Struttura: Header (11 EF) + CMD (2b) + LEN (2b) + DATA + LRC
+async function sendCommand(cmd, data = []) {
+    // Header Chameleon: 11 EF | CMD_L CMD_H | LEN_L LEN_H | DATA... | LRC
     let pkt = [0x11, 0xEF, cmd & 0xFF, (cmd >> 8) & 0xFF, data.length & 0xFF, (data.length >> 8) & 0xFF, ...data];
     pkt.push(calcLRC(pkt));
-    await tx.writeValueWithoutResponse(new Uint8Array(pkt));
-    log(`TX CMD ${cmd}`, "text-purple-400");
+    await txChar.writeValueWithoutResponse(new Uint8Array(pkt));
 }
 
-async function forceScan() {
-    try {
-        log("SVEGLIA CHIP RADIO...", "text-yellow-500");
-        // 1. SET_READER_MODE (1000)
-        await sendFrame(1000, [0x01]);
-        await new Promise(r => setTimeout(r, 100));
-
-        // 2. ANTENNA_POWER_ON (1008) - Questo è CRUCIALE per il LED
-        await sendFrame(1008, [0x01]);
-        await new Promise(r => setTimeout(r, 100));
-
-        // 3. HF_14443A_SCAN (1014)
-        log("LED BIANCO ATTIVO - AVVICINA TAG", "text-blue-400 font-bold");
-        await sendFrame(1014, [0x01]);
-    } catch (e) { log("ERRORE INVIO: " + e.message, "text-red-400"); }
-}
-
-function handleRx(event) {
+function handleData(event) {
     const val = new Uint8Array(event.target.value.buffer);
-    const hex = [...val].map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase();
-    
-    // Risposta a SCAN (1014)
-    if (val[0] === 0x11 && val[2] === 0x14 && val.length > 8) {
+    // Risposta a SCAN (1014) o ANTICOL (1012)
+    if (val[0] === 0x11 && (val[2] === 0x14 || val[2] === 0x12) && val.length > 8) {
         const uid = Array.from(val.slice(6, 10));
         const uidHex = uid.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
-        document.getElementById('uid-display').innerText = uidHex;
         
+        document.getElementById('uid-val').innerText = uidHex;
         const key = getMicroelKey(uid);
         document.getElementById('key-display').innerText = key.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
-        log("TAG LETTO: " + uidHex, "text-green-400 font-bold");
+        
+        log("LETTURA RIUSCITA: " + uidHex, "text-green-400 font-bold");
     }
 }
 
+async function startMifareProcess() {
+    try {
+        log("ATTIVAZIONE CHIP RADIO...", "text-yellow-500");
+        
+        // 1. SET_READER_MODE (1000) -> 01 (Attiva)
+        await sendCommand(1000, [0x01]);
+        await new Promise(r => setTimeout(r, 100));
+
+        // 2. HF_14443A_ANTICOL (1012) -> Questo attiva il LED e interroga il tag
+        log("LED BIANCO ACCESO. AVVICINA TESSERA...", "text-blue-400 font-bold");
+        await sendCommand(1012); 
+
+    } catch (e) { log("ERRORE: " + e.message, "text-red-400"); }
+}
+
 document.getElementById('btn-connect').onclick = connect;
-document.getElementById('btn-scan').onclick = forceScan;
+document.getElementById('btn-read').onclick = startMifareProcess;
 </script>
 </body>
 </html>
