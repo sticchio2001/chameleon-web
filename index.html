@@ -2,127 +2,108 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Microel Chameleon - ULTIMATE FIX</title>
+    <title>Microel Chameleon Fix - Livello Fisico</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { background: #000; color: #00ff00; font-family: 'Courier New', monospace; }
-        .log-box { background: #050505; border: 1px solid #1a1a1a; height: 350px; overflow-y: auto; padding: 10px; font-size: 12px; }
-        .status-on { color: #00ff00; text-shadow: 0 0 5px #00ff00; }
-        .status-off { color: #ff0000; }
-    </style>
 </head>
-<body class="p-5">
-    <div class="max-w-2xl mx-auto">
-        <h1 class="text-2xl font-bold mb-4 italic">CHAMELEON_ULTRA_DEBUG_v4</h1>
-        
-        <div class="grid grid-cols-2 gap-4 mb-4">
-            <button id="btnConnect" class="bg-zinc-800 p-4 border border-zinc-700 hover:bg-zinc-700 font-bold uppercase">1. Connetti BLE</button>
-            <button onclick="hardResetAndScan()" class="bg-red-900 p-4 border border-red-700 hover:bg-red-600 font-black uppercase text-white">2. FORZA SCAN (LED)</button>
+<body class="bg-slate-950 text-white font-mono p-4">
+    <div class="max-w-md mx-auto border border-slate-800 rounded-xl p-6 bg-slate-900 shadow-2xl">
+        <h1 class="text-blue-500 font-black text-center mb-6 italic underline">FORCE NFC START</h1>
+
+        <div class="space-y-4">
+            <button id="btn-conn" class="w-full bg-slate-800 p-4 rounded-lg font-bold border border-slate-700">
+                1. CONNETTI CHAMELEON
+            </button>
+            
+            <button onclick="forceScan()" class="w-full bg-red-600 p-5 rounded-lg font-black text-lg shadow-xl animate-pulse">
+                2. ATTIVA LED BIANCO
+            </button>
         </div>
 
-        <div class="bg-zinc-900 p-4 border border-zinc-800 mb-4 grid grid-cols-2 gap-4">
-            <div>
-                <span class="text-[10px] text-zinc-500 block">UID DETECTED</span>
-                <div id="uidVal" class="text-xl font-bold">-- -- -- --</div>
-            </div>
-            <div>
-                <span class="text-[10px] text-zinc-500 block">CALCULATED KEY A</span>
-                <div id="keyVal" class="text-xl font-bold text-orange-500">-- -- -- -- -- --</div>
-            </div>
+        <div id="log" class="mt-6 bg-black h-64 overflow-y-auto p-4 text-[10px] text-green-500 border border-slate-800 rounded">
+            Attesa connessione...
         </div>
 
-        <div id="console" class="log-box mb-2"></div>
-        <button onclick="document.getElementById('console').innerHTML=''" class="text-[10px] text-zinc-600 underline uppercase">Clear Log</button>
+        <div class="mt-4 p-4 bg-blue-900/20 border border-blue-800 rounded-lg">
+            <div class="text-[10px] text-blue-400">UID RILEVATO:</div>
+            <div id="uid-out" class="text-xl font-black tracking-widest text-white">-- -- -- --</div>
+        </div>
     </div>
 
     <script>
-        const SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-        const TX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-        const RX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+        const UART_SVC = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const TX_CHR = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+        const RX_CHR = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-        let txChar, device;
+        let tx;
 
-        function log(m, type = '') {
-            const c = document.getElementById('console');
-            const color = type === 'in' ? 'text-blue-400' : (type === 'out' ? 'text-yellow-400' : 'text-zinc-500');
-            c.innerHTML += `<div class="${color}">[${new Date().toLocaleTimeString().split(' ')[0]}] ${m}</div>`;
-            c.scrollTop = c.scrollHeight;
+        function addLog(m) {
+            const l = document.getElementById('log');
+            l.innerHTML += `<div>> ${m}</div>`;
+            l.scrollTop = l.scrollHeight;
         }
 
         async function connect() {
             try {
-                device = await navigator.bluetooth.requestDevice({
+                const dev = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'Chameleon' }],
-                    optionalServices: [SERVICE]
+                    optionalServices: [UART_SVC]
                 });
-                const server = await device.gatt.connect();
-                const svc = await server.getPrimaryService(SERVICE);
-                txChar = await svc.getCharacteristic(TX);
-                const rx = await svc.getCharacteristic(RX);
+                const server = await dev.gatt.connect();
+                const svc = await server.getPrimaryService(UART_SVC);
+                tx = await svc.getCharacteristic(TX_CHR);
+                const rx = await svc.getCharacteristic(RX_CHR);
 
                 await rx.startNotifications();
                 rx.oncharacteristicvaluechanged = (e) => {
-                    const val = new Uint8Array(e.target.value.buffer);
-                    const hex = Array.from(val).map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
-                    log(`<- RX: ${hex}`, 'in');
+                    const b = new Uint8Array(e.target.value.buffer);
+                    const hex = Array.from(b).map(x => x.toString(16).padStart(2,'0')).join('').toUpperCase();
+                    addLog("RX: " + hex);
                     
-                    // Se troviamo l'UID nella risposta (comando 1014)
-                    if (val[0] === 0x11 && val[2] === 0x14 && val.length > 8) {
-                        const uid = Array.from(val.slice(6, 10));
-                        document.getElementById('uidVal').innerText = uid.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
-                        const key = deriveKey(uid);
-                        document.getElementById('keyVal').innerText = key.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
-                        log("!!! TESSERA RILEVATA !!!", "in");
+                    // Se riceve risposta scan (CMD 1014)
+                    if (hex.includes("11EF1410")) {
+                        const uid = hex.substring(12, 20);
+                        document.getElementById('uid-out').innerText = uid.match(/.{1,2}/g).join(' ');
+                        addLog("!!! TAG TROVATO !!!");
                     }
                 };
-                log("CHAMELEON CONNESSO", "in");
-                document.getElementById('btnConnect').innerText = "CONNESSO";
-            } catch (err) { log("ERRORE: " + err.message); }
+                addLog("CONNESSO.");
+                document.getElementById('btn-conn').innerText = "DISPOSITIVO PRONTO";
+            } catch (err) { addLog("ERR: " + err.message); }
         }
 
-        function deriveKey(uid) {
-            let sum = uid.reduce((a, b) => a + b, 0) & 0xFF;
-            let b7 = (sum >> 4) & 0x0F; let b8 = sum & 0x0F;
-            let cond = (b7==0||(b7==1&&b8!=15)||b7==4||(b7==5&&b8!=15)||b7==8||(b7==9&&b8!=15)||b7==12||(b7==13&&b8!=15)||sum==63||sum==127||sum==191||sum==255);
-            let k = cond ? (sum + 1) : (sum + 65);
-            return [k, k^147, k^166, k^116, k^42, k^248];
+        async function sendRaw(hex) {
+            const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(h => parseInt(h, 16)));
+            // Invio forzato "Write Without Response" per evitare blocchi di Windows
+            await tx.writeValueWithoutResponse(bytes);
+            addLog("TX: " + hex);
         }
 
-        async function sendRaw(cmd, data = []) {
-            // Header Chameleon ufficiale
-            let head = [0x11, 0xEF, cmd & 0xFF, (cmd >> 8) & 0xFF, data.length & 0xFF, (data.length >> 8) & 0xFF];
-            let full = [...head, ...data];
-            let lrc = 0; full.forEach(b => lrc ^= b);
-            full.push(lrc);
-            
-            await txChar.writeValue(new Uint8Array(full));
-            log(`-> TX CMD ${cmd} [${full.map(b => b.toString(16).padStart(2,'0')).join(' ')}]`, 'out');
-        }
+        async function forceScan() {
+            if(!tx) return;
+            addLog("INIZIO SEQUENZA CRITICA...");
 
-        async function hardResetAndScan() {
-            if(!txChar) return alert("Connetti Bluetooth!");
-            
-            log("INIZIO RESET HARDWARE...");
             try {
-                // 1. SVEGLIA: Invia byte vuoti per pulire la seriale
-                await txChar.writeValue(new Uint8Array([0x00, 0x00, 0x00]));
+                // 1. DUMP/RESET: Pulisce il buffer del Chameleon
+                await tx.writeValueWithoutResponse(new Uint8Array([0x00, 0x00, 0x00, 0x00]));
                 await new Promise(r => setTimeout(r, 100));
 
-                // 2. MODALITA' READER (CMD 1000)
-                await sendRaw(1000, [0x01]);
+                // 2. SET READER MODE (CMD 1000 - Pacchetto completo con LRC)
+                await sendRaw("11EFE803010001F5");
                 await new Promise(r => setTimeout(r, 200));
 
-                // 3. ANTENNA POWER (CMD 1008)
-                await sendRaw(1008, [0x01]);
+                // 3. ANTENNA ON (CMD 1008 - Pacchetto completo con LRC)
+                await sendRaw("11EFF003010001ED");
                 await new Promise(r => setTimeout(r, 200));
 
-                // 4. HF SCAN (CMD 1014)
-                log("TENTATIVO ACCENSIONE LED BIANCO...", "out");
-                await sendRaw(1014, [0x01]);
-            } catch (e) { log("ERRORE: " + e.message); }
+                // 4. SCAN ISO14443A (CMD 1014 - Pacchetto completo con LRC)
+                // Questo comando DEVE accendere il LED
+                await sendRaw("11EFF603010001E7");
+                addLog("COMANDO SCAN INVIATO.");
+
+            } catch (e) { addLog("ERR: " + e.message); }
         }
 
-        document.getElementById('btnConnect').onclick = connect;
+        document.getElementById('btn-conn').onclick = connect;
     </script>
 </body>
 </html>
