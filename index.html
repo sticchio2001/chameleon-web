@@ -1,54 +1,33 @@
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>BLE WebApp</title>
-</head>
-<body>
-  <h1>Connessione Bluetooth</h1>
-  <button id="connectBtn">Connetti</button>
-  <pre id="log"></pre>
+async function connect() {
+    try {
+        device = await navigator.bluetooth.requestDevice({
+            filters: [{ namePrefix: 'Chameleon' }],
+            optionalServices: [SERVICE_UUID]
+        });
 
-<script>
-let device;
-let characteristic;
+        device.addEventListener('gattserverdisconnected', () => {
+            log("Disconnesso", "text-red-400");
+            tx = null;
+            rx = null;
+        });
 
-const SERVICE_UUID = '0000xxxx-0000-1000-8000-00805f9b34fb'; // UUID del servizio
-const CHARACTERISTIC_UUID = '0000yyyy-0000-1000-8000-00805f9b34fb'; // UUID della characteristic
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService(SERVICE_UUID);
 
-document.getElementById('connectBtn').addEventListener('click', async () => {
-  try {
-    device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [SERVICE_UUID] }]
-    });
+        tx = await service.getCharacteristic(TX_UUID);
+        rx = await service.getCharacteristic(RX_UUID);
 
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+        await rx.startNotifications();
 
-    log("Connesso al dispositivo");
+        rx.addEventListener('characteristicvaluechanged', (e) => {
+            const val = new Uint8Array(e.target.value);
+            const hex = [...val].map(b => b.toString(16).padStart(2,'0')).join(' ');
+            log("<- RX: " + hex.toUpperCase());
+        });
 
-    characteristic.startNotifications();
-    characteristic.addEventListener('characteristicvaluechanged', handleNotification);
+        log("CONNESSO!", "text-blue-400");
 
-  } catch (error) {
-    log("Errore: " + error);
-  }
-});
-
-function handleNotification(event) {
-  const value = new TextDecoder().decode(event.target.value);
-  log("Ricevuto: " + value);
+    } catch (err) {
+        log("ERRORE: " + err.message, "text-red-500");
+    }
 }
-
-async function sendCommand(cmd) {
-  const encoder = new TextEncoder();
-  await characteristic.writeValue(encoder.encode(cmd));
-}
-
-function log(msg) {
-  document.getElementById('log').textContent += msg + "\n";
-}
-</script>
-</body>
-</html>
