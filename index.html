@@ -2,57 +2,42 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chameleon Ultra - Mifare Classic Reader</title>
+    <title>Microel Pro - Chameleon Force Scan</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #020617; color: #f1f5f9; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-        .terminal { background: #000; border: 1px solid #1e293b; height: 300px; overflow-y: auto; border-radius: 8px; padding: 10px; font-size: 12px; }
-        .log-tx { color: #60a5fa; }
-        .log-rx { color: #4ade80; }
-        .log-err { color: #f87171; }
+        body { background: #020617; color: #f1f5f9; font-family: monospace; }
+        .terminal { background: #000; height: 250px; overflow-y: auto; border: 1px solid #1e293b; padding: 10px; font-size: 11px; }
+        .btn { transition: all 0.1s; cursor: pointer; }
+        .btn:active { transform: scale(0.95); opacity: 0.8; }
     </style>
 </head>
 <body class="p-4">
+    <div class="max-w-md mx-auto">
+        <h1 class="text-xl font-bold text-blue-500 mb-4 tracking-tighter italic text-center underline">CHAMELEON ULTRA READER</h1>
 
-    <div class="max-w-xl mx-auto">
-        <header class="mb-6">
-            <h1 class="text-2xl font-black text-blue-500 italic uppercase">Chameleon <span class="text-white">Mifare Reader</span></h1>
-            <p class="text-[10px] text-slate-500 tracking-widest">WEB-SERIAL OVER BLUETOOTH</p>
-        </header>
+        <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 mb-4">
+            <button id="connect-btn" class="w-full bg-blue-600 p-3 rounded-lg font-bold text-xs mb-3 btn">1. CONNETTI USB/BLE</button>
+            
+            <button onclick="forceMifareScan()" class="w-full bg-orange-600 p-4 rounded-xl font-black text-white text-sm shadow-lg shadow-orange-900/30 btn uppercase">
+                🔥 Forza Lettura (LED BIANCO)
+            </button>
+        </div>
 
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 mb-4 shadow-2xl">
-            <div class="flex justify-between items-center mb-4">
-                <button id="connect-btn" class="bg-blue-600 hover:bg-blue-500 text-white font-bold px-6 py-2 rounded-lg transition-all active:scale-95 text-sm">
-                    1. CONNETTI CHAMELEON
-                </button>
-                <div id="status-dot" class="h-3 w-3 rounded-full bg-red-600 shadow-[0_0_10px_red]"></div>
+        <div class="grid grid-cols-2 gap-2 mb-4 text-center font-bold">
+            <div class="bg-slate-900 p-2 rounded border border-slate-800">
+                <div class="text-[9px] text-slate-500 uppercase">UID</div>
+                <div id="ui-uid" class="text-blue-400 text-sm italic tracking-widest">-- -- -- --</div>
             </div>
-
-            <div class="grid grid-cols-2 gap-3">
-                <button onclick="fullScanProcess()" class="bg-orange-600 hover:bg-orange-500 text-white p-4 rounded-xl font-black text-xs uppercase shadow-lg shadow-orange-900/20">
-                    🔍 ANALISI MICROEL
-                </button>
-                <button onclick="clearLog()" class="bg-slate-800 text-slate-400 p-4 rounded-xl font-bold text-xs">
-                    PULISCI LOG
-                </button>
+            <div class="bg-slate-900 p-2 rounded border border-slate-800">
+                <div class="text-[9px] text-slate-500 uppercase">Key A Microel</div>
+                <div id="ui-key" class="text-orange-400 text-xs">-- -- -- -- -- --</div>
             </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4 mb-4">
-            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
-                <span class="text-[10px] text-slate-500 uppercase font-bold">UID Tessera</span>
-                <div id="ui-uid" class="text-lg font-bold text-blue-400 tracking-widest">-- -- -- --</div>
-            </div>
-            <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center">
-                <span class="text-[10px] text-slate-500 uppercase font-bold">Key A Microel</span>
-                <div id="ui-key" class="text-sm font-bold text-orange-400 tracking-tighter">-- -- -- -- -- --</div>
-            </div>
+        <div id="terminal" class="terminal rounded-lg mb-2">
+            <div class="text-slate-700 italic">Pronto per la connessione...</div>
         </div>
-
-        <div id="terminal" class="terminal shadow-inner shadow-black">
-            <div class="text-slate-600 italic">-- Attesa connessione Bluetooth --</div>
-        </div>
+        <button onclick="document.getElementById('terminal').innerHTML=''" class="text-[9px] text-slate-600 underline uppercase">Pulisci Console</button>
     </div>
 
     <script>
@@ -60,37 +45,15 @@
         const TX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
         const RX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-        let txChar, device;
+        let device, txChar;
 
-        function log(msg, type = '') {
+        function log(msg, color = "text-slate-500") {
             const t = document.getElementById('terminal');
-            const div = document.createElement('div');
-            div.className = type === 'tx' ? 'log-tx' : (type === 'rx' ? 'log-rx' : (type === 'err' ? 'log-err' : ''));
-            div.innerText = `[${new Date().toLocaleTimeString().split(' ')[0]}] ${type === 'tx' ? '->' : (type === 'rx' ? '<-' : ' ')} ${msg}`;
-            t.appendChild(div);
+            t.innerHTML += `<div class="${color}">> ${msg}</div>`;
             t.scrollTop = t.scrollHeight;
         }
 
-        // Funzione calcolo checksum LRC (Obbligatoria per Chameleon Ultra)
-        function calculateLRC(data) {
-            let lrc = 0;
-            data.forEach(byte => lrc ^= byte);
-            return lrc;
-        }
-
-        async function sendChameleonCmd(cmdId, data = []) {
-            if (!txChar) return log("ERRORE: Non connesso", "err");
-            
-            // Frame: 0x11 0xEF | CMD (2 byte) | LEN (2 byte) | DATA | LRC
-            let header = [0x11, 0xEF, cmdId & 0xFF, (cmdId >> 8) & 0xFF, data.length & 0xFF, (data.length >> 8) & 0xFF];
-            let fullPacket = [...header, ...data];
-            fullPacket.push(calculateLRC(fullPacket));
-
-            await txChar.writeValue(new Uint8Array(fullPacket));
-            log(`Inviato CMD ${cmdId} [${data.length} byte]`, 'tx');
-        }
-
-        // --- Logica Derivazione Chiavi Microel dal tuo file .ino ---
+        // --- Logica Calcolo Chiavi Microel (Dal tuo sketch) ---
         function deriveMicroelKey(uid) {
             let sommaUID = uid.reduce((a, b) => a + b, 0);
             let b6_v = sommaUID & 0xFF;
@@ -98,8 +61,23 @@
             let b8_k = b6_v & 0x0F;
             let cond = (b7_k==0x0 || (b7_k==0x1 && b8_k!=0xF) || b7_k==0x4 || (b7_k==0x5 && b8_k!=0xF) || b7_k==0x8 || (b7_k==0x9 && b8_k!=0xF) || b7_k==0xC || (b7_k==0xD && b8_k!=0xF) || b6_v==0x3F || b6_v==0x7F || b6_v==0xBF || b6_v==0xFF);
             let kByte = cond ? (b6_v + 1) : (b6_v + 0x41);
-            let kA = [kByte, kByte ^ 0x93, kByte ^ 0xA6, kByte ^ 0x74, kByte ^ 0x2A, kByte ^ 0xF8];
-            return kA;
+            return [kByte, kByte ^ 0x93, kByte ^ 0xA6, kByte ^ 0x74, kByte ^ 0x2A, kByte ^ 0xF8];
+        }
+
+        // --- Nuova funzione di invio con calcolo LRC Corretto ---
+        async function sendChameleon(cmd, data = []) {
+            if (!txChar) return log("NON CONNESSO", "text-red-500");
+            
+            // Pacchetto: 11 EF + CMD(L) + CMD(H) + LEN(L) + LEN(H) + DATA
+            let frame = [0x11, 0xEF, cmd & 0xFF, (cmd >> 8) & 0xFF, data.length & 0xFF, (data.length >> 8) & 0xFF, ...data];
+            
+            // Calcolo Checksum XOR (LRC)
+            let lrc = 0;
+            for (let b of frame) lrc ^= b;
+            frame.push(lrc);
+
+            await txChar.writeValue(new Uint8Array(frame));
+            log(`SENT CMD ${cmd}: [${data}]`, "text-blue-400");
         }
 
         async function connect() {
@@ -116,50 +94,51 @@
                 await rx.startNotifications();
                 rx.oncharacteristicvaluechanged = handleRX;
 
-                document.getElementById('status-dot').className = "h-3 w-3 rounded-full bg-green-500 shadow-[0_0_10px_#22c55e]";
-                log("Chameleon Ultra Connesso", "rx");
+                log("CONNESSO E PRONTO", "text-green-500 font-bold underline");
+                document.getElementById('connect-btn').innerText = "✅ DISPOSITIVO OK";
             } catch (err) {
-                log(err.message, "err");
+                log("ERRORE: " + err, "text-red-500");
             }
         }
 
         function handleRX(event) {
             let val = new Uint8Array(event.target.value.buffer);
-            let hex = Array.from(val).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase();
-            log(hex, "rx");
+            let hex = Array.from(val).map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+            log(`RCVD: ${hex}`, "text-green-400");
 
-            // Parsing pacchetto risposta UID (CMD 1014 risponde con UID)
+            // Se riceve risposta allo scan (CMD 1014)
             if (val[0] === 0x11 && val[1] === 0xEF && val.length >= 10) {
                 let uid = Array.from(val.slice(6, 10));
                 document.getElementById('ui-uid').innerText = uid.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
                 
                 let keyA = deriveMicroelKey(uid);
                 document.getElementById('ui-key').innerText = keyA.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
-                log("Chiave calcolata con successo!");
+                log("!!! TAG RILEVATO !!!", "text-blue-400 font-bold");
             }
         }
 
-        async function fullScanProcess() {
-            if(!txChar) return log("Connetti prima il dispositivo", "err");
+        async function forceMifareScan() {
+            log("Procedura Reset Antenna...", "text-yellow-500");
             
-            log("Inizio sequenza Mifare...");
-            
-            // 1. Imposta Modalità Reader (CMD 1000)
-            await sendChameleonCmd(1000, [0x01]);
-            await new Promise(r => setTimeout(r, 100));
+            // 1. Spegni Antenna (CMD 1008 - param 00)
+            await sendChameleon(1008, [0x00]);
+            await new Promise(r => setTimeout(r, 150));
 
-            // 2. Accendi Antenna (CMD 1008)
-            await sendChameleonCmd(1008, [0x01]);
-            await new Promise(r => setTimeout(r, 100));
+            // 2. Set Mode Reader (CMD 1000 - param 01)
+            await sendChameleon(1000, [0x01]);
+            await new Promise(r => setTimeout(r, 150));
 
-            // 3. Esegui Scansione ISO14443A (CMD 1014)
-            // Questo accenderà il LED e cercherà l'UID
-            log("Cercando tessera Mifare...");
-            await sendChameleonCmd(1014, [0x01]);
+            // 3. Accendi Antenna (CMD 1008 - param 01)
+            await sendChameleon(1008, [0x01]);
+            await new Promise(r => setTimeout(r, 150));
+
+            // 4. Scan 14443A (CMD 1014 - param 01)
+            // QUI IL LED DEVE ACCENDERSI
+            log("SCANSIONE ATTIVA - LED BIANCO", "text-white font-bold");
+            await sendChameleon(1014, [0x01]);
         }
 
         document.getElementById('connect-btn').onclick = connect;
-        function clearLog() { document.getElementById('terminal').innerHTML = ''; }
     </script>
 </body>
 </html>
