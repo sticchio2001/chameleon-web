@@ -2,37 +2,42 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Microel Pro - Chameleon Ultra Fix</title>
+    <title>Microel Pro - Chameleon Ultra Scanner</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', monospace; }
-        .terminal { background: #000; border: 1px solid #30363d; height: 200px; overflow-y: auto; font-size: 11px; color: #8b949e; }
-        .box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+        .terminal { background: #000; border: 1px solid #30363d; height: 200px; overflow-y: auto; font-size: 11px; color: #4ade80; }
+        .box { background: #161b22; border: 1px solid #30363d; border-radius: 12px; transition: all 0.3s; }
+        .box:hover { border-color: #58a6ff; }
+        .btn-main { @apply px-6 py-3 rounded-xl font-bold transition-all active:scale-95 shadow-lg disabled:opacity-30; }
     </style>
 </head>
-<body class="p-6">
+<body class="p-4 md:p-8">
     <div class="max-w-2xl mx-auto">
-        <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold text-blue-500 italic">MICROEL <span class="text-white font-light">ULTRA</span></h1>
-            <div class="flex gap-2">
-                <button id="btn-connect" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold transition-all">CONNETTI</button>
-                <button id="btn-read" class="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded-lg font-black transition-all disabled:opacity-30" disabled>LEGGI (LED BIANCO)</button>
+        <header class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-black text-blue-500 italic tracking-tighter">
+                MICROEL <span class="text-white font-light uppercase tracking-widest text-sm">Ultra-Scanner</span>
+            </h1>
+            <button id="btnConnect" class="btn-main bg-blue-600 hover:bg-blue-500 text-white">CONNETTI</button>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="box p-6 border border-slate-800 shadow-xl">
+                <span class="text-[10px] text-slate-500 uppercase font-bold tracking-widest">UID Tessera</span>
+                <div id="uidDisplay" class="text-3xl font-mono text-white mt-2">-- -- -- --</div>
+            </div>
+            <div class="box p-6 border border-slate-800 shadow-xl">
+                <span class="text-[10px] text-slate-500 uppercase font-bold tracking-widest">Chiave Microel A</span>
+                <div id="keyDisplay" class="text-3xl font-mono text-orange-500 mt-2">-- -- -- -- -- --</div>
             </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-4 mb-6">
-            <div class="box p-4 border-l-4 border-blue-600 shadow-xl">
-                <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">UID TESSERA</div>
-                <div id="uid-val" class="text-2xl font-mono text-white tracking-widest">-- -- -- --</div>
-            </div>
-            <div class="box p-4 border-l-4 border-orange-600 shadow-xl">
-                <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">CHIAVE MICROEL A</div>
-                <div id="key-val" class="text-2xl font-mono text-orange-400">-- -- -- -- -- --</div>
-            </div>
-        </div>
+        <button id="btnScan" class="btn-main w-full bg-green-600 hover:bg-green-500 text-white text-xl mb-6 shadow-green-900/20" disabled>
+            AVVIA SCANSIONE (LED BIANCO)
+        </button>
 
-        <div id="terminal" class="terminal p-4 rounded-lg shadow-inner">
-            <div class="text-yellow-600 italic uppercase text-[9px] mb-2 tracking-widest">System Log</div>
+        <div id="terminal" class="terminal p-4 rounded-xl border border-slate-800 shadow-inner">
+            <div class="text-slate-600 italic text-[10px] mb-2 uppercase tracking-widest border-b border-slate-900 pb-1">Debug Log</div>
         </div>
     </div>
 
@@ -49,13 +54,13 @@ function log(msg, color = "text-slate-400") {
     term.scrollTop = term.scrollHeight;
 }
 
-// Calcolo LRC (XOR Checksum)
-function calcLRC(data) {
+// Calcolo LRC (XOR) come da specifica ufficiale
+function calculateLRC(data) {
     return data.reduce((acc, byte) => acc ^ byte, 0);
 }
 
-// Formula Microel Key A
-function getMicroelKey(uid) {
+// Formula Microel per derivare la chiave A
+function deriveMicroelKey(uid) {
     let sum = uid.reduce((a, b) => a + b, 0) & 0xFF;
     let b7 = (sum >> 4) & 0x0F, b8 = sum & 0x0F;
     let cond = (b7==0||(b7==1&&b8!=15)||b7==4||(b7==5&&b8!=15)||b7==8||(b7==9&&b8!=15)||b7==12||(b7==13&&b8!=15)||sum==63||sum==127||sum==191||sum==255);
@@ -75,53 +80,58 @@ async function connect() {
         const rx = await service.getCharacteristic(RX_UUID);
 
         await rx.startNotifications();
-        rx.oncharacteristicvaluechanged = handleData;
+        rx.oncharacteristicvaluechanged = handleNotifications;
 
-        log("DISPOSITIVO CONNESSO", "text-green-400 font-bold");
-        document.getElementById('btn-read').disabled = false;
-        document.getElementById('btn-connect').innerText = "ONLINE";
-    } catch (e) { log("ERRORE: " + e.message, "text-red-500"); }
+        log("CHAMELEON ULTRA CONNESSO", "text-blue-400 font-bold");
+        document.getElementById('btnConnect').innerText = "ONLINE";
+        document.getElementById('btnScan').disabled = false;
+    } catch (e) { log("ERRORE CONNESSIONE: " + e.message, "text-red-500"); }
 }
 
 async function sendCommand(cmd, data = []) {
-    // Header Chameleon: 11 EF | CMD_L CMD_H | LEN_L LEN_H | DATA... | LRC
+    // Header (11 EF) + CMD (2 byte) + LEN (2 byte) + DATA + LRC
     let pkt = [0x11, 0xEF, cmd & 0xFF, (cmd >> 8) & 0xFF, data.length & 0xFF, (data.length >> 8) & 0xFF, ...data];
-    pkt.push(calcLRC(pkt));
+    pkt.push(calculateLRC(pkt));
     await txChar.writeValueWithoutResponse(new Uint8Array(pkt));
 }
 
-function handleData(event) {
+function handleNotifications(event) {
     const val = new Uint8Array(event.target.value.buffer);
-    // Risposta a SCAN (1014) o ANTICOL (1012)
-    if (val[0] === 0x11 && (val[2] === 0x14 || val[2] === 0x12) && val.length > 8) {
-        const uid = Array.from(val.slice(6, 10));
-        const uidHex = uid.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
-        
-        document.getElementById('uid-val').innerText = uidHex;
-        const key = getMicroelKey(uid);
-        document.getElementById('key-display').innerText = key.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
-        
-        log("LETTURA RIUSCITA: " + uidHex, "text-green-400 font-bold");
+    
+    // Il comando HF_14443A_SCAN è il 1014 (0x14 0x03)
+    if (val[0] === 0x11 && val[2] === 0x14) {
+        // Se la lunghezza dei dati è > 0 (tag rilevato)
+        if (val[4] > 0) {
+            const uid = Array.from(val.slice(6, 10)); // Prendiamo i primi 4 byte dell'UID
+            const uidHex = uid.map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase();
+            
+            document.getElementById('uidDisplay').innerText = uidHex;
+            const key = deriveMicroelKey(uid);
+            document.getElementById('keyDisplay').innerText = key.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+            
+            log("TESSERA RILEVATA: " + uidHex, "text-blue-400 font-bold");
+        }
     }
 }
 
-async function startMifareProcess() {
+async function startScan() {
     try {
-        log("ATTIVAZIONE CHIP RADIO...", "text-yellow-500");
+        log("Attivazione Antenna (LED BIANCO)...", "text-white");
         
-        // 1. SET_READER_MODE (1000) -> 01 (Attiva)
+        // 1. SET_READER_MODE (1000) -> Parametro 01 (Attiva)
         await sendCommand(1000, [0x01]);
         await new Promise(r => setTimeout(r, 100));
 
-        // 2. HF_14443A_ANTICOL (1012) -> Questo attiva il LED e interroga il tag
-        log("LED BIANCO ACCESO. AVVICINA TESSERA...", "text-blue-400 font-bold");
-        await sendCommand(1012); 
-
-    } catch (e) { log("ERRORE: " + e.message, "text-red-400"); }
+        // 2. HF_14443A_SCAN (1014) -> Parametro 01 (Inizia scansione)
+        // Questo comando nel link taichunmin è quello che attiva il loop di lettura
+        await sendCommand(1014, [0x01]);
+        
+        log("Scansione in corso... Avvicina il tag.", "text-green-500 animate-pulse");
+    } catch (e) { log("ERRORE SCAN: " + e.message, "text-red-400"); }
 }
 
-document.getElementById('btn-connect').onclick = connect;
-document.getElementById('btn-read').onclick = startMifareProcess;
+document.getElementById('btnConnect').onclick = connect;
+document.getElementById('btnScan').onclick = startScan;
 </script>
 </body>
 </html>
