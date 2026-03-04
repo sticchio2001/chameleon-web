@@ -3,124 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chameleon Ultra - Coges Fix</title>
+    <title>Chameleon Ultra - Coges Simple</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #020617; color: #f1f5f9; font-family: sans-serif; }
-        .terminal { background: #000; border: 1px solid #1e293b; height: 380px; overflow-y: auto; font-family: monospace; font-size: 0.7rem; border-radius: 8px; }
-        .btn { transition: all 0.1s; cursor: pointer; }
-        .btn:active { transform: scale(0.95); opacity: 0.8; }
-        .status-dot { height: 10px; width: 10px; border-radius: 50%; }
+        body { background-color: #0f172a; color: #f1f5f9; font-family: monospace; }
+        .terminal { background: #000; border: 1px solid #334155; height: 350px; overflow-y: auto; padding: 10px; font-size: 0.75rem; }
+        .btn { background: #1e293b; border: 1px solid #334155; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        .btn:active { background: #334155; }
     </style>
 </head>
 <body class="p-4">
 
     <div class="max-w-md mx-auto">
-        <header class="flex justify-between items-center mb-6">
-            <h1 class="text-xl font-bold italic tracking-tighter">CHAMELEON <span class="text-orange-500">PRO</span></h1>
-            <div class="flex items-center gap-2">
-                <div id="status-dot" class="status-dot bg-red-600"></div>
-                <span id="status-text" class="text-[10px] font-bold uppercase">Disconnected</span>
-            </div>
-        </header>
+        <h1 class="text-xl font-bold mb-4 text-blue-400">Chameleon V1-Modified</h1>
 
-        <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 mb-4 shadow-xl">
-            <button id="connect-btn" class="w-full bg-blue-600 p-3 rounded-lg font-bold text-xs mb-4 btn">CONNETTI DISPOSITIVO</button>
+        <div class="grid gap-4 mb-4">
+            <button id="connect-btn" class="btn bg-blue-600 border-none">1. CONNETTI</button>
             
             <div class="grid grid-cols-2 gap-2">
-                <button onclick="forceScanB()" class="btn bg-orange-600/30 text-orange-400 border border-orange-500/20 p-4 rounded-xl text-xs font-black">
-                    🔥 FORCE SCAN B
-                </button>
-                <button onclick="sendChameleonCommand(1002)" class="btn bg-slate-800 p-4 rounded-xl text-xs font-bold text-slate-300">
-                    🔋 BATTERY INFO
-                </button>
+                <button onclick="sendHex('11ef03e80000f6')" class="btn text-blue-300">Info Versione</button>
+                <button onclick="sendHex('11ef03ea0000f4')" class="btn text-green-300">Info Batteria</button>
             </div>
+
+            <button onclick="scanCoges()" class="btn bg-orange-600/50 text-orange-200 border-orange-500">
+                🔍 SCAN COGES (14443B)
+            </button>
         </div>
 
-        <div class="terminal p-4 shadow-inner mb-2" id="terminal">
-            <div class="text-slate-700 text-[10px] mb-2 uppercase">Console Output</div>
+        <div class="terminal mb-2" id="terminal">
+            <div class="text-slate-500 italic">-- Log di sistema --</div>
         </div>
         
-        <button onclick="clearLog()" class="w-full text-[9px] text-slate-500 underline">CANCELLA LOG</button>
+        <button onclick="document.getElementById('terminal').innerHTML=''" class="text-[10px] underline text-slate-500">Pulisci Log</button>
     </div>
 
     <script>
-        const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-        const TX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-        const RX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+        const UART_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const TX_CHAR = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+        const RX_CHAR = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-        let device, txChar, rxChar;
+        let device, tx, rx;
 
-        function log(msg, color = 'text-slate-400') {
-            const t = document.getElementById('terminal');
+        function log(msg, color = "text-slate-400") {
             const div = document.createElement('div');
-            div.className = color + " mb-1";
-            div.innerText = `> ${msg}`;
-            t.appendChild(div);
-            t.scrollTop = t.scrollHeight;
+            div.className = color;
+            div.innerText = `[${new Date().toLocaleTimeString().split(' ')[0]}] ${msg}`;
+            document.getElementById('terminal').appendChild(div);
+            document.getElementById('terminal').scrollTop = 9999;
         }
 
         async function connect() {
             try {
-                log("Cercando dispositivo...", "text-blue-400");
+                log("Ricerca...");
                 device = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'Chameleon' }],
-                    optionalServices: [SERVICE_UUID]
+                    optionalServices: [UART_SERVICE]
                 });
                 const server = await device.gatt.connect();
-                const service = await server.getPrimaryService(SERVICE_UUID);
-                txChar = await service.getCharacteristic(TX_UUID);
-                rxChar = await service.getCharacteristic(RX_UUID);
-                
-                await rxChar.startNotifications();
-                rxChar.addEventListener('characteristicvaluechanged', (e) => {
-                    const val = new Uint8Array(e.target.value.buffer);
-                    const hex = Array.from(val).map(b => b.toString(16).padStart(2, '0')).join(' ');
-                    log(`Ricevuto: ${hex.toUpperCase()}`, "text-green-400");
+                const service = await server.getPrimaryService(UART_SERVICE);
+                tx = await service.getCharacteristic(TX_CHAR);
+                rx = await service.getCharacteristic(RX_CHAR);
+
+                await rx.startNotifications();
+                rx.addEventListener('characteristicvaluechanged', (e) => {
+                    let hex = Array.from(new Uint8Array(e.target.value.buffer))
+                                   .map(b => b.toString(16).padStart(2, '0')).join(' ');
+                    log(`<- ${hex.toUpperCase()}`, "text-green-400");
                 });
 
-                document.getElementById('status-dot').className = "status-dot bg-green-500";
-                document.getElementById('status-text').innerText = "ONLINE";
-                log("CONNESSO!", "text-green-500");
+                log("CONNESSO!", "text-blue-400 font-bold");
+                document.getElementById('connect-btn').innerText = "DISCONNETTI";
             } catch (err) {
                 log("Errore: " + err, "text-red-500");
             }
         }
 
-        async function sendChameleonCommand(cmdId, data = []) {
-            if (!txChar) return log("NON CONNESSO", "text-red-500");
-            
-            // FRAME: 11 EF + CMD(L/H) + LEN(L/H) + DATA + LRC
-            let frame = [0x11, 0xEF, cmdId & 0xFF, (cmdId >> 8) & 0xFF, data.length & 0xFF, (data.length >> 8) & 0xFF, ...data];
-            let lrc = 0;
-            for (let b of frame) lrc ^= b;
-            frame.push(lrc);
-
-            await txChar.writeValue(new Uint8Array(frame));
-            log(`Inviato CMD ${cmdId} [${data}]`, "text-blue-300");
+        async function sendHex(hexStr) {
+            if (!tx) return log("NON CONNESSO", "text-red-500");
+            const bytes = new Uint8Array(hexStr.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+            await tx.writeValue(bytes);
+            log(`-> ${hexStr.toUpperCase()}`, "text-slate-500");
         }
 
-        async function forceScanB() {
-            log("Configurazione Antenna...", "text-orange-400");
-            // 1. Spegni antenna per sicurezza
-            await sendChameleonCommand(1008, [0x00]);
-            await new Promise(r => setTimeout(r, 100));
+        async function scanCoges() {
+            log("Avvio scansione ISO 14443-B...", "text-orange-400");
             
-            // 2. Imposta Modalità HF (Reader)
-            await sendChameleonCommand(1000, [0x01]); // CMD_SET_MODE
+            // In questa versione usiamo i comandi HEX "pre-calcolati" per evitare errori di checksum
+            // 1. Reset/Antenna ON (11 EF 03 F0 01 00 01 f4) - Esempio CMD_SET_ANTENNA_ON
+            await sendHex('11ef03f0010001f4'); 
             await new Promise(r => setTimeout(r, 100));
 
-            // 3. Accendi Antenna
-            await sendChameleonCommand(1008, [0x01]);
-            await new Promise(r => setTimeout(r, 100));
-
-            // 4. Esegui Scan ISO14443B
-            log("Scansione B attiva...", "text-orange-500 font-bold");
-            await sendChameleonCommand(1014, [0x02]);
+            // 2. Scan B (11 EF 03 F6 01 00 02 f3) - CMD_HF_SCAN con parametro 02
+            // Questo comando accenderà il LED e cercherà la chiave
+            await sendHex('11ef03f6010002f3');
         }
 
-        document.getElementById('connect-btn').onclick = connect;
-        function clearLog() { document.getElementById('terminal').innerHTML = ''; }
+        document.getElementById('connect-btn').onclick = () => {
+            if (device?.gatt.connected) { device.gatt.disconnect(); location.reload(); }
+            else { connect(); }
+        };
     </script>
 </body>
 </html>
