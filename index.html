@@ -3,126 +3,124 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chameleon Ultra Web Controller</title>
+    <title>Chameleon Microel Analyzer</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #0f172a; color: #f1f5f9; font-family: sans-serif; }
-        .terminal { background: #000; border: 1px solid #334155; height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.8rem; }
+        body { background: #0d1117; color: #c9d1d9; font-family: monospace; }
+        .box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 10px; }
+        .terminal { background: #000; height: 200px; overflow-y: auto; font-size: 0.7rem; border: 1px solid #30363d; }
     </style>
 </head>
 <body class="p-4">
+    <div class="max-w-xl mx-auto">
+        <h2 class="text-xl font-bold text-center text-blue-400 mb-4 italic">CHAMELEON MICROEL PRO</h2>
 
-    <div class="max-w-md mx-auto">
-        <header class="mb-6 text-center">
-            <h1 class="text-2xl font-bold text-blue-400">Chameleon Ultra JS</h1>
-            <p class="text-sm text-slate-400">Web Bluetooth Interface</p>
-        </header>
-
-        <div class="bg-slate-800 rounded-xl p-4 shadow-lg mb-4 border border-slate-700">
-            <div class="flex items-center justify-between mb-4">
-                <span id="status-dot" class="h-3 w-3 rounded-full bg-red-500"></span>
-                <span id="status-text" class="text-sm font-medium">Disconnesso</span>
-                <button id="connect-btn" class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg text-sm transition">
-                    Connetti
-                </button>
+        <div class="box mb-4 flex justify-between items-center">
+            <div>
+                <div id="status" class="text-red-500 font-bold uppercase text-xs">Disconnesso</div>
+                <div id="uid-display" class="text-blue-400 text-sm font-bold">UID: -- -- -- --</div>
             </div>
+            <button id="btn-connect" class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded font-bold text-white text-sm">CONNETTI</button>
         </div>
 
         <div class="grid grid-cols-2 gap-2 mb-4">
-            <button onclick="sendCommand('01')" class="bg-slate-700 p-3 rounded-lg hover:bg-slate-600 text-sm italic">Get Version</button>
-            <button onclick="sendCommand('02')" class="bg-slate-700 p-3 rounded-lg hover:bg-slate-600 text-sm italic">Battery Level</button>
+            <div class="box"><label class="block text-[10px] text-gray-500 uppercase">Credito</label><span id="d-cred" class="text-lg text-green-400">-- €</span></div>
+            <div class="box"><label class="block text-[10px] text-gray-500 uppercase">Operazioni</label><span id="d-op" class="text-lg">--</span></div>
+            <div class="box"><label class="block text-[10px] text-gray-500 uppercase">Somma Ingr.</label><span id="d-tot" class="text-lg">-- €</span></div>
+            <div class="box"><label class="block text-[10px] text-gray-500 uppercase">Data/Ora</label><span id="d-date" class="text-xs text-blue-300">--</span></div>
         </div>
 
-        <div class="terminal rounded-lg p-3 mb-4" id="terminal">
-            <div class="text-blue-300 font-bold border-b border-slate-800 mb-1">--- Terminal Log ---</div>
+        <div class="box mb-4">
+            <label class="block text-[10px] text-gray-500 uppercase mb-2 italic">Ricarica Microel</label>
+            <div class="flex gap-2">
+                <select id="amountSel" class="bg-black border border-gray-700 rounded px-2 text-sm flex-1">
+                    <option value="100">1.00 €</option>
+                    <option value="500">5.00 €</option>
+                    <option value="1000" selected>10.00 €</option>
+                </select>
+                <button onclick="startAnalyze()" class="bg-gray-700 px-4 py-2 rounded font-bold text-xs">ANALISI</button>
+                <button onclick="startReload()" class="bg-purple-600 px-4 py-2 rounded font-bold text-xs">RICARICA</button>
+            </div>
         </div>
 
-        <button onclick="clearLog()" class="text-xs text-slate-500 underline w-full text-right">Cancella Log</button>
+        <div id="terminal" class="terminal p-2 rounded"></div>
     </div>
 
     <script>
-        // UUID Standard per Nordic UART Service (utilizzato dal Chameleon)
-        const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-        const TX_CHARACTERISTIC_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'; // Scrittura
-        const RX_CHARACTERISTIC_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'; // Notifiche
+        const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const TX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+        const RX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-        let device, gattServer, txChar, rxChar;
+        let txChar, rxChar, currentUID = null;
 
-        const connectBtn = document.getElementById('connect-btn');
-        const statusText = document.getElementById('status-text');
-        const statusDot = document.getElementById('status-dot');
-        const terminal = document.getElementById('terminal');
+        // --- Logica Core Microel (Trasportata da .ino) ---
+        
+        function decode16(low, high) { return (high << 8) | low; } [cite: 2]
 
-        function log(msg, type = 'info') {
-            const time = new Date().toLocaleTimeString().split(' ')[0];
-            const color = type === 'in' ? 'text-green-400' : (type === 'out' ? 'text-yellow-400' : 'text-slate-400');
-            terminal.innerHTML += `<div class="${color}">[${time}] ${msg}</div>`;
-            terminal.scrollTop = terminal.scrollHeight;
+        function deriveKeys(uid) { [cite: 14]
+            let sommaUID = uid.reduce((a, b) => a + b, 0);
+            let b6_v = sommaUID & 0xFF;
+            let b7_k = (b6_v >> 4) & 0x0F;
+            let b8_k = b6_v & 0x0F;
+            let cond = (b7_k==0x0 || (b7_k==0x1 && b8_k!=0xF) || b7_k==0x4 || (b7_k==0x5 && b8_k!=0xF) || b7_k==0x8 || (b7_k==0x9 && b8_k!=0xF) || b7_k==0xC || (b7_k==0xD && b8_k!=0xF) || b6_v==0x3F || b6_v==0x7F || b6_v==0xBF || b6_v==0xFF);
+            let kByte = cond ? (b6_v + 1) : (b6_v + 0x41); [cite: 15]
+            let kA = [kByte, kByte ^ 0x93, kByte ^ 0xA6, kByte ^ 0x74, kByte ^ 0x2A, kByte ^ 0xF8];
+            let kB = kA.map(b => (~b) & 0xFF);
+            return { kA, kB };
         }
 
-        async function connect() {
-            try {
-                log("Ricerca dispositivo...");
-                device = await navigator.bluetooth.requestDevice({
-                    filters: [{ namePrefix: 'Chameleon' }],
-                    optionalServices: [UART_SERVICE_UUID]
-                });
-
-                log(`Trovato: ${device.name}`);
-                statusText.innerText = "Connessione...";
-                
-                gattServer = await device.gatt.connect();
-                const service = await gattServer.getPrimaryService(UART_SERVICE_UUID);
-                
-                txChar = await service.getCharacteristic(TX_CHARACTERISTIC_UUID);
-                rxChar = await service.getCharacteristic(RX_CHARACTERISTIC_UUID);
-
-                // Abilita le notifiche per ricevere dati
-                await rxChar.startNotifications();
-                rxChar.addEventListener('characteristicvaluechanged', handleNotifications);
-
-                statusText.innerText = "Connesso";
-                statusDot.classList.replace('bg-red-500', 'bg-green-500');
-                connectBtn.innerText = "Disconnetti";
-                log("Comunicazione BLE Pronta!", 'info');
-
-            } catch (error) {
-                log("Errore: " + error, 'error');
-                statusText.innerText = "Errore";
-            }
+        function calculateChecksum(block) { [cite: 41]
+            let cs = 0;
+            for(let i=0; i<15; i++) cs += block[i];
+            return (cs + 0x21) & 0xFF;
         }
 
-        function handleNotifications(event) {
-            let value = event.target.value;
-            let decoder = new TextDecoder('utf-8');
-            // Nota: Chameleon usa pacchetti binari, qui lo mostriamo come Hex
-            let hex = Array.from(new Uint8Array(value.buffer))
-                           .map(b => b.toString(16).padStart(2, '0'))
-                           .join(' ');
-            log(`<- ${hex}`, 'in');
+        // --- Gestione Chameleon Bluetooth ---
+
+        async function sendCommand(cmdId, data = []) {
+            let frame = [0x11, 0xEF, cmdId & 0xFF, (cmdId >> 8) & 0xFF, data.length & 0xFF, (data.length >> 8) & 0xFF, ...data];
+            let lrc = 0;
+            frame.forEach(b => lrc ^= b);
+            frame.push(lrc);
+            await txChar.writeValue(new Uint8Array(frame));
         }
 
-        async function sendCommand(hexStr) {
-            if (!txChar) return log("Non connesso!", 'error');
+        document.getElementById('btn-connect').onclick = async () => {
+            const device = await navigator.bluetooth.requestDevice({
+                filters: [{ namePrefix: 'Chameleon' }],
+                optionalServices: [SERVICE_UUID]
+            });
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService(SERVICE_UUID);
+            txChar = await service.getCharacteristic(TX_UUID);
+            rxChar = await service.getCharacteristic(RX_UUID);
             
-            // Converte stringa hex in buffer
-            const bytes = new Uint8Array(hexStr.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-            await txChar.writeValue(bytes);
-            log(`-> ${hexStr}`, 'out');
+            await rxChar.startNotifications();
+            rxChar.oncharacteristicvaluechanged = handleNotification;
+            
+            document.getElementById('status').innerText = "ONLINE";
+            document.getElementById('status').className = "text-green-500 font-bold uppercase text-xs";
+        };
+
+        function handleNotification(event) {
+            let raw = new Uint8Array(event.target.value.buffer);
+            // Qui implementeresti il parser delle risposte per estrarre l'UID e i Blocchi
+            console.log("RX:", raw);
         }
 
-        connectBtn.addEventListener('click', () => {
-            if (device && device.gatt.connected) {
-                device.gatt.disconnect();
-                statusText.innerText = "Disconnesso";
-                statusDot.classList.replace('bg-green-500', 'bg-red-500');
-                connectBtn.innerText = "Connetti";
-            } else {
-                connect();
-            }
-        });
+        async function startAnalyze() {
+            // 1. Leggi UID
+            // 2. Calcola Chiavi
+            // 3. Autentica e leggi blocco 4
+            // 4. Esegui parsing Microel (trasportato da source: 21-23)
+            log("Analisi avviata...");
+        }
 
-        function clearLog() { terminal.innerHTML = ""; }
+        function log(msg) {
+            const term = document.getElementById('terminal');
+            term.innerHTML += `<div>> ${msg}</div>`;
+            term.scrollTop = term.scrollHeight;
+        }
     </script>
 </body>
 </html>
