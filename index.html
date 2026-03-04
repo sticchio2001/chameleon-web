@@ -2,38 +2,42 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Chameleon Ultra - CLI MODE</title>
+    <title>Microel USB - Chameleon Ultra Fix</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #050505; color: #00ff41; font-family: 'Consolas', monospace; }
+        .terminal { background: #000; border: 1px solid #003b00; height: 300px; overflow-y: auto; padding: 10px; font-size: 12px; box-shadow: inset 0 0 10px #003b00; }
+        button { transition: all 0.2s; border: 1px solid #00ff41; }
+        button:hover { background: #00ff41; color: #000; }
+    </style>
 </head>
-<body class="bg-black text-green-400 font-mono p-4">
-    <div class="max-w-md mx-auto border border-green-900 p-6 shadow-[0_0_20px_rgba(0,255,0,0.2)]">
-        <h1 class="text-center text-xl font-bold mb-6 border-b border-green-900 pb-2">CLI TERMINAL MODE</h1>
-
-        <button id="btn-conn" class="w-full bg-green-900 text-white p-4 rounded mb-4 font-bold border border-green-400">
-            1. COLLEGA DISPOSITIVO
-        </button>
+<body class="p-5">
+    <div class="max-w-xl mx-auto">
+        <h1 class="text-xl font-bold mb-4 uppercase tracking-tighter">Chameleon Ultra [USB SERIAL MODE]</h1>
         
-        <button onclick="sendCLI()" class="w-full bg-blue-900 text-white p-4 rounded font-black mb-6 border border-blue-400">
-            2. AVVIA LETTURA (LED BIANCO)
-        </button>
-
-        <div id="log" class="bg-black h-64 overflow-y-auto p-2 text-xs border border-green-900 mb-4">
-            In attesa di connessione BLE...
+        <div class="grid grid-cols-2 gap-4 mb-6">
+            <button id="btn-usb" class="p-4 font-bold bg-transparent">1. COLLEGA USB</button>
+            <button onclick="startMifareScan()" class="p-4 font-black bg-green-900/20">2. SCANSIONE (LED)</button>
         </div>
 
-        <div class="bg-zinc-900 p-4 rounded">
-            <span class="text-[10px] text-zinc-500 uppercase">UID Rilevato:</span>
-            <div id="uid-res" class="text-white text-lg font-bold">-- -- -- --</div>
+        <div class="grid grid-cols-2 gap-4 mb-6 text-center">
+            <div class="border border-zinc-800 p-4">
+                <div class="text-[10px] text-zinc-500 uppercase">UID</div>
+                <div id="uid-display" class="text-lg font-bold">-- -- -- --</div>
+            </div>
+            <div class="border border-zinc-800 p-4">
+                <div class="text-[10px] text-zinc-500 uppercase">Microel Key A</div>
+                <div id="key-display" class="text-lg font-bold text-orange-500">-- -- -- -- -- --</div>
+            </div>
         </div>
+
+        <div id="log" class="terminal mb-2">Attesa collegamento USB...</div>
     </div>
 
     <script>
-        const SVC = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-        const TX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-        const RX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
-
-        let txChar;
-        let decoder = new TextDecoder();
+        let port;
+        let reader;
+        let writer;
 
         function log(m) {
             const l = document.getElementById('log');
@@ -41,53 +45,69 @@
             l.scrollTop = l.scrollHeight;
         }
 
-        async function connect() {
-            try {
-                const dev = await navigator.bluetooth.requestDevice({
-                    filters: [{ namePrefix: 'Chameleon' }],
-                    optionalServices: [SVC]
-                });
-                const server = await dev.gatt.connect();
-                const svc = await server.getPrimaryService(SVC);
-                txChar = await svc.getCharacteristic(TX);
-                const rx = await svc.getCharacteristic(RX);
+        // Calcolo chiave Microel dal tuo sketch .ino
+        function deriveKey(uid) {
+            let sum = uid.reduce((a, b) => a + b, 0) & 0xFF;
+            let b7 = (sum >> 4) & 0x0F; let b8 = sum & 0x0F;
+            let cond = (b7==0||(b7==1&&b8!=15)||b7==4||(b7==5&&b8!=15)||b7==8||(b7==9&&b8!=15)||b7==12||(b7==13&&b8!=15)||sum==63||sum==127||sum==191||sum==255);
+            let k = cond ? (sum + 1) : (sum + 65);
+            return [k, k^147, k^166, k^116, k^42, k^248];
+        }
 
-                await rx.startNotifications();
-                rx.oncharacteristicvaluechanged = (e) => {
-                    let msg = decoder.decode(e.target.value);
-                    log("RX: " + msg.trim());
-                    
-                    // Se nella risposta testuale appare un UID
-                    if (msg.includes("UID:")) {
-                        let match = msg.match(/UID:\s*([0-9A-Fa-f\s]+)/);
-                        if(match) document.getElementById('uid-res').innerText = match[1].trim();
+        document.getElementById('btn-usb').onclick = async () => {
+            try {
+                port = await navigator.serial.requestPort();
+                await port.open({ baudRate: 115200 });
+                writer = port.writable.getWriter();
+                
+                document.getElementById('btn-usb').innerText = "✅ USB OK";
+                log("CONNESSO VIA USB.");
+                readLoop();
+            } catch (e) { log("ERRORE USB: " + e.message); }
+        };
+
+        async function readLoop() {
+            while (port.readable) {
+                reader = port.readable.getReader();
+                try {
+                    while (true) {
+                        const { value, done } = await reader.read();
+                        if (done) break;
+                        const hex = Array.from(value).map(b => b.toString(16).padStart(2,'0')).join('').toUpperCase();
+                        log("RX: " + hex);
+                        
+                        // Cerca header UID nel flusso (Protocollo 11 EF 14)
+                        if (hex.includes("11EF14")) {
+                            const idx = hex.indexOf("11EF14");
+                            const uidHex = hex.substring(idx + 12, idx + 20);
+                            const uidArr = uidHex.match(/.{1,2}/g).map(h => parseInt(h, 16));
+                            
+                            document.getElementById('uid-display').innerText = uidHex.match(/.{1,2}/g).join(' ');
+                            const key = deriveKey(uidArr);
+                            document.getElementById('key-display').innerText = key.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+                        }
                     }
-                };
-                log("CONNESSO IN MODALITÀ TESTUALE.");
-            } catch (err) { log("ERRORE: " + err.message); }
+                } catch (e) { log("ERRORE LETTURA: " + e.message); } finally { reader.releaseLock(); }
+            }
         }
 
-        async function sendCLI() {
-            if (!txChar) return;
+        async function startMifareScan() {
+            if (!writer) return;
+            log("INVIO COMANDI DI SCANSIONE...");
             
-            log("INVIO COMANDI CLI...");
-            try {
-                // Invia i comandi testuali seguiti da a capo (\r\n)
-                // hf mf cscan è il comando ufficiale per lo scan Mifare
-                const commands = [
-                    "hf mf cscan\r\n"
-                ];
+            // Pacchetti RAW (Modalità Reader + Antenna ON + Scan)
+            const cmds = [
+                "11EFE803010001F5", // Reader Mode
+                "11EFF003010001ED", // Antenna ON
+                "11EFF603010001E7"  // Scan HF
+            ];
 
-                for (let cmd of commands) {
-                    let encoder = new TextEncoder();
-                    await txChar.writeValue(encoder.encode(cmd));
-                    log("TX: " + cmd.trim());
-                    await new Promise(r => setTimeout(r, 500));
-                }
-            } catch (e) { log("ERRORE TX: " + e.message); }
+            for (let hex of cmds) {
+                const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(h => parseInt(h, 16)));
+                await writer.write(bytes);
+                await new Promise(r => setTimeout(r, 100));
+            }
         }
-
-        document.getElementById('btn-conn').onclick = connect;
     </script>
 </body>
 </html>
