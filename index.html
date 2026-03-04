@@ -2,105 +2,111 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Microel Chameleon Fix - Livello Fisico</title>
+    <title>Chameleon Ultra - Deep Level Reader</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-950 text-white font-mono p-4">
-    <div class="max-w-md mx-auto border border-slate-800 rounded-xl p-6 bg-slate-900 shadow-2xl">
-        <h1 class="text-blue-500 font-black text-center mb-6 italic underline">FORCE NFC START</h1>
+<body class="bg-black text-white font-mono p-4">
+    <div class="max-w-md mx-auto">
+        <h1 class="text-red-500 font-bold border-b border-red-900 mb-4 uppercase italic">Chameleon Ultra Force-Link</h1>
 
-        <div class="space-y-4">
-            <button id="btn-conn" class="w-full bg-slate-800 p-4 rounded-lg font-bold border border-slate-700">
-                1. CONNETTI CHAMELEON
-            </button>
-            
-            <button onclick="forceScan()" class="w-full bg-red-600 p-5 rounded-lg font-black text-lg shadow-xl animate-pulse">
-                2. ATTIVA LED BIANCO
-            </button>
+        <div class="bg-zinc-900 p-4 rounded border border-zinc-800 mb-4">
+            <button id="btn-conn" class="w-full bg-blue-700 p-4 rounded font-black mb-4 uppercase">1. Collega Bluetooth</button>
+            <button onclick="totalResetAndScan()" class="w-full bg-red-600 p-4 rounded font-black text-xl shadow-[0_0_20px_rgba(255,0,0,0.4)]">2. FORZA LETTURA (LED)</button>
         </div>
 
-        <div id="log" class="mt-6 bg-black h-64 overflow-y-auto p-4 text-[10px] text-green-500 border border-slate-800 rounded">
-            Attesa connessione...
+        <div class="grid grid-cols-1 gap-2 mb-4">
+            <div class="bg-zinc-900 p-4 rounded border border-zinc-700">
+                <span class="text-[10px] text-zinc-500 uppercase">Dati Ricevuti (HEX)</span>
+                <div id="hex-out" class="text-green-500 break-all text-xs mt-2">--</div>
+            </div>
+            <div class="bg-zinc-900 p-4 rounded border border-zinc-700">
+                <span class="text-[10px] text-zinc-500 uppercase">UID Identificato</span>
+                <div id="uid-out" class="text-blue-400 font-bold text-xl tracking-tighter">-- -- -- --</div>
+            </div>
         </div>
 
-        <div class="mt-4 p-4 bg-blue-900/20 border border-blue-800 rounded-lg">
-            <div class="text-[10px] text-blue-400">UID RILEVATO:</div>
-            <div id="uid-out" class="text-xl font-black tracking-widest text-white">-- -- -- --</div>
+        <div id="console" class="bg-black border border-zinc-800 h-48 overflow-y-auto p-2 text-[10px] text-zinc-500">
+            Console pronta...
         </div>
     </div>
 
     <script>
-        const UART_SVC = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-        const TX_CHR = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-        const RX_CHR = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+        const SVC = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const TX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+        const RX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-        let tx;
+        let txChar;
 
-        function addLog(m) {
-            const l = document.getElementById('log');
-            l.innerHTML += `<div>> ${m}</div>`;
-            l.scrollTop = l.scrollHeight;
+        function log(m) {
+            const c = document.getElementById('console');
+            c.innerHTML += `<div>> ${m}</div>`;
+            c.scrollTop = c.scrollHeight;
         }
 
         async function connect() {
             try {
                 const dev = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'Chameleon' }],
-                    optionalServices: [UART_SVC]
+                    optionalServices: [SVC]
                 });
                 const server = await dev.gatt.connect();
-                const svc = await server.getPrimaryService(UART_SVC);
-                tx = await svc.getCharacteristic(TX_CHR);
-                const rx = await svc.getCharacteristic(RX_CHR);
+                const service = await server.getPrimaryService(SVC);
+                txChar = await service.getCharacteristic(TX);
+                const rx = await service.getCharacteristic(RX);
 
                 await rx.startNotifications();
                 rx.oncharacteristicvaluechanged = (e) => {
                     const b = new Uint8Array(e.target.value.buffer);
                     const hex = Array.from(b).map(x => x.toString(16).padStart(2,'0')).join('').toUpperCase();
-                    addLog("RX: " + hex);
+                    document.getElementById('hex-out').innerText = hex;
+                    log("Ricevuto: " + hex);
                     
-                    // Se riceve risposta scan (CMD 1014)
-                    if (hex.includes("11EF1410")) {
-                        const uid = hex.substring(12, 20);
+                    // Se troviamo l'header di risposta 11EF e il comando 14 (Scan)
+                    if (hex.includes("11EF14")) {
+                        const idx = hex.indexOf("11EF14");
+                        const uid = hex.substring(idx + 12, idx + 20);
                         document.getElementById('uid-out').innerText = uid.match(/.{1,2}/g).join(' ');
-                        addLog("!!! TAG TROVATO !!!");
                     }
                 };
-                addLog("CONNESSO.");
-                document.getElementById('btn-conn').innerText = "DISPOSITIVO PRONTO";
-            } catch (err) { addLog("ERR: " + err.message); }
+                log("CONNESSO.");
+            } catch (err) { log("ERR: " + err.message); }
         }
 
-        async function sendRaw(hex) {
+        // FUNZIONE CRITICA: Invia i byte uno alla volta con micro-ritardi
+        // Questo impedisce a Windows di corrompere il pacchetto seriale
+        async function sendAtomic(hex) {
             const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(h => parseInt(h, 16)));
-            // Invio forzato "Write Without Response" per evitare blocchi di Windows
-            await tx.writeValueWithoutResponse(bytes);
-            addLog("TX: " + hex);
+            for (let b of bytes) {
+                await txChar.writeValueWithoutResponse(new Uint8Array([b]));
+                // Ritardo minimo tra i byte (essenziale per alcuni firmware)
+                await new Promise(r => setTimeout(r, 2)); 
+            }
+            log("Inviato: " + hex);
         }
 
-        async function forceScan() {
-            if(!tx) return;
-            addLog("INIZIO SEQUENZA CRITICA...");
+        async function totalResetAndScan() {
+            if (!txChar) return alert("Connetti prima!");
 
             try {
-                // 1. DUMP/RESET: Pulisce il buffer del Chameleon
-                await tx.writeValueWithoutResponse(new Uint8Array([0x00, 0x00, 0x00, 0x00]));
-                await new Promise(r => setTimeout(r, 100));
+                log("ESEGUO HARD RESET PROTOCOLLO...");
+                
+                // 1. Pulisci il canale (Wake-up)
+                await txChar.writeValueWithoutResponse(new Uint8Array([0x00, 0x00, 0x00]));
+                await new Promise(r => setTimeout(r, 300));
 
-                // 2. SET READER MODE (CMD 1000 - Pacchetto completo con LRC)
-                await sendRaw("11EFE803010001F5");
-                await new Promise(r => setTimeout(r, 200));
+                // 2. CMD_GET_APP_VERSION (Test se risponde)
+                await sendAtomic("11EF010000001E");
+                await new Promise(r => setTimeout(r, 300));
 
-                // 3. ANTENNA ON (CMD 1008 - Pacchetto completo con LRC)
-                await sendRaw("11EFF003010001ED");
-                await new Promise(r => setTimeout(r, 200));
+                // 3. SET_READER_MODE (Forza modo lettura)
+                await sendAtomic("11EFE803010001F5");
+                await new Promise(r => setTimeout(r, 300));
 
-                // 4. SCAN ISO14443A (CMD 1014 - Pacchetto completo con LRC)
-                // Questo comando DEVE accendere il LED
-                await sendRaw("11EFF603010001E7");
-                addLog("COMANDO SCAN INVIATO.");
+                // 4. HF_SCAN (Accende il LED)
+                log("ATTIVAZIONE ANTENNA (LED BIANCO)...");
+                await sendAtomic("11EFF603010001E7");
 
-            } catch (e) { addLog("ERR: " + e.message); }
+            } catch (e) { log("ERRORE: " + e.message); }
         }
 
         document.getElementById('btn-conn').onclick = connect;
