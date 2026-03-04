@@ -2,111 +2,95 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Microel USB - Chameleon Ultra Fix</title>
+    <title>Chameleon Ultra - HARD RESET & SCAN</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { background: #050505; color: #00ff41; font-family: 'Consolas', monospace; }
-        .terminal { background: #000; border: 1px solid #003b00; height: 300px; overflow-y: auto; padding: 10px; font-size: 12px; box-shadow: inset 0 0 10px #003b00; }
-        button { transition: all 0.2s; border: 1px solid #00ff41; }
-        button:hover { background: #00ff41; color: #000; }
-    </style>
 </head>
-<body class="p-5">
-    <div class="max-w-xl mx-auto">
-        <h1 class="text-xl font-bold mb-4 uppercase tracking-tighter">Chameleon Ultra [USB SERIAL MODE]</h1>
-        
-        <div class="grid grid-cols-2 gap-4 mb-6">
-            <button id="btn-usb" class="p-4 font-bold bg-transparent">1. COLLEGA USB</button>
-            <button onclick="startMifareScan()" class="p-4 font-black bg-green-900/20">2. SCANSIONE (LED)</button>
+<body class="bg-black text-green-500 font-mono p-6">
+    <div class="max-w-xl mx-auto border-2 border-green-700 p-6 bg-zinc-950 shadow-lg">
+        <h1 class="text-center font-bold text-xl mb-6">CHAMELEON USB RECOVERY</h1>
+
+        <div class="flex gap-4 mb-6">
+            <button id="connect" class="flex-1 bg-green-900 text-white p-4 font-bold border border-green-500 hover:bg-green-700">
+                1. CONNETTI USB
+            </button>
+            <button onclick="hardResetScan()" class="flex-1 bg-blue-900 text-white p-4 font-bold border border-blue-500 hover:bg-blue-700">
+                2. RESET & SCAN (LED)
+            </button>
         </div>
 
-        <div class="grid grid-cols-2 gap-4 mb-6 text-center">
-            <div class="border border-zinc-800 p-4">
-                <div class="text-[10px] text-zinc-500 uppercase">UID</div>
-                <div id="uid-display" class="text-lg font-bold">-- -- -- --</div>
-            </div>
-            <div class="border border-zinc-800 p-4">
-                <div class="text-[10px] text-zinc-500 uppercase">Microel Key A</div>
-                <div id="key-display" class="text-lg font-bold text-orange-500">-- -- -- -- -- --</div>
-            </div>
+        <div class="bg-black border border-green-900 p-4 mb-4">
+            <div class="text-[10px] text-green-700 uppercase">Status Log:</div>
+            <div id="console" class="h-48 overflow-y-auto text-[11px] mt-2">Attesa...</div>
         </div>
 
-        <div id="log" class="terminal mb-2">Attesa collegamento USB...</div>
+        <div class="p-4 bg-zinc-900 border border-zinc-700 rounded text-center">
+            <span class="text-xs text-zinc-500 uppercase">UID Rilevato</span>
+            <div id="uid-val" class="text-2xl font-black text-white tracking-widest mt-2">-- -- -- --</div>
+        </div>
     </div>
 
     <script>
-        let port;
-        let reader;
-        let writer;
+        let port, writer, reader;
+        const decoder = new TextDecoder();
+        const encoder = new TextEncoder();
 
-        function log(m) {
-            const l = document.getElementById('log');
-            l.innerHTML += `<div>> ${m}</div>`;
-            l.scrollTop = l.scrollHeight;
-        }
+        const log = (m) => {
+            const c = document.getElementById('console');
+            c.innerHTML += `<div>> ${m}</div>`;
+            c.scrollTop = c.scrollHeight;
+        };
 
-        // Calcolo chiave Microel dal tuo sketch .ino
-        function deriveKey(uid) {
-            let sum = uid.reduce((a, b) => a + b, 0) & 0xFF;
-            let b7 = (sum >> 4) & 0x0F; let b8 = sum & 0x0F;
-            let cond = (b7==0||(b7==1&&b8!=15)||b7==4||(b7==5&&b8!=15)||b7==8||(b7==9&&b8!=15)||b7==12||(b7==13&&b8!=15)||sum==63||sum==127||sum==191||sum==255);
-            let k = cond ? (sum + 1) : (sum + 65);
-            return [k, k^147, k^166, k^116, k^42, k^248];
-        }
-
-        document.getElementById('btn-usb').onclick = async () => {
+        document.getElementById('connect').onclick = async () => {
             try {
                 port = await navigator.serial.requestPort();
                 await port.open({ baudRate: 115200 });
-                writer = port.writable.getWriter();
-                
-                document.getElementById('btn-usb').innerText = "✅ USB OK";
-                log("CONNESSO VIA USB.");
-                readLoop();
-            } catch (e) { log("ERRORE USB: " + e.message); }
+                log("USB CONNESSA.");
+                listen();
+            } catch (e) { log("ERRORE: " + e.message); }
         };
 
-        async function readLoop() {
+        async function listen() {
             while (port.readable) {
                 reader = port.readable.getReader();
                 try {
                     while (true) {
                         const { value, done } = await reader.read();
                         if (done) break;
-                        const hex = Array.from(value).map(b => b.toString(16).padStart(2,'0')).join('').toUpperCase();
-                        log("RX: " + hex);
+                        const text = decoder.decode(value);
+                        log("RX: " + text.trim());
                         
-                        // Cerca header UID nel flusso (Protocollo 11 EF 14)
-                        if (hex.includes("11EF14")) {
-                            const idx = hex.indexOf("11EF14");
-                            const uidHex = hex.substring(idx + 12, idx + 20);
-                            const uidArr = uidHex.match(/.{1,2}/g).map(h => parseInt(h, 16));
-                            
-                            document.getElementById('uid-display').innerText = uidHex.match(/.{1,2}/g).join(' ');
-                            const key = deriveKey(uidArr);
-                            document.getElementById('key-display').innerText = key.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+                        // Cerca UID nella risposta testuale
+                        if (text.includes("UID:")) {
+                            const match = text.match(/UID:\s*([A-Fa-f0-9\s]+)/);
+                            if (match) document.getElementById('uid-val').innerText = match[1].trim();
                         }
                     }
-                } catch (e) { log("ERRORE LETTURA: " + e.message); } finally { reader.releaseLock(); }
+                } catch (e) { log("ERR: " + e.message); } finally { reader.releaseLock(); }
             }
         }
 
-        async function startMifareScan() {
-            if (!writer) return;
-            log("INVIO COMANDI DI SCANSIONE...");
+        async function hardResetScan() {
+            if (!port) return alert("Collega USB!");
+            writer = port.writable.getWriter();
             
-            // Pacchetti RAW (Modalità Reader + Antenna ON + Scan)
-            const cmds = [
-                "11EFE803010001F5", // Reader Mode
-                "11EFF003010001ED", // Antenna ON
-                "11EFF603010001E7"  // Scan HF
-            ];
+            try {
+                log("INVIO HARD RESET HARDWARE...");
+                
+                // Sequenza di comandi CLI per sbloccare il chip radio
+                const cmds = [
+                    "\r\n",             // Pulisce la riga
+                    "hw reset\r\n",     // Reset hardware
+                    "hf mf cscan\r\n"   // Scan Mifare Classic
+                ];
 
-            for (let hex of cmds) {
-                const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(h => parseInt(h, 16)));
-                await writer.write(bytes);
-                await new Promise(r => setTimeout(r, 100));
-            }
+                for (let c of cmds) {
+                    await writer.write(encoder.encode(c));
+                    log("TX: " + c.trim());
+                    await new Promise(r => setTimeout(r, 1000)); // Aspetta il boot del reset
+                }
+                
+                log("TENTATIVO COMPLETATO. Guarda il LED bianco.");
+            } catch (e) { log("ERR TX: " + e.message); } finally { writer.releaseLock(); }
         }
     </script>
 </body>
