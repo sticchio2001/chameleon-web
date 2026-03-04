@@ -3,94 +3,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chameleon Ultra - Debug Mode</title>
+    <title>Chameleon Ultra - Final Fix</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-black text-slate-300 p-5 font-mono text-sm">
+<body class="bg-slate-950 text-slate-300 p-4 font-mono text-[11px]">
 
-    <div class="max-w-md mx-auto">
-        <h1 class="text-orange-500 font-bold mb-4 border-b border-orange-900 pb-2">CHAMELEON DEBUG V2</h1>
+    <div class="max-w-md mx-auto border border-slate-800 rounded-3xl p-5 bg-slate-900 shadow-2xl">
+        <h1 class="text-blue-500 font-black text-center mb-6 tracking-tighter text-lg italic">CHAMELEON ULTRA ULTIMATE</h1>
 
-        <div class="flex flex-col gap-3 mb-6">
-            <button id="conn-btn" class="bg-slate-800 p-4 rounded border border-slate-700 font-bold active:bg-slate-700">1. COLLEGA BLUETOOTH</button>
+        <div class="flex flex-col gap-4">
+            <button id="conn-btn" class="w-full bg-blue-700 hover:bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg active:scale-95 transition-all">
+                🔗 COLLEGA CHAMELEON
+            </button>
             
-            <div class="grid grid-cols-2 gap-2">
-                <button onclick="sendRaw('11ef03ea0000f4')" class="bg-blue-900/30 p-3 rounded border border-blue-800 text-blue-400 text-xs">TEST BATTERIA</button>
-                <button onclick="sendRaw('11ef03e80000f6')" class="bg-blue-900/30 p-3 rounded border border-blue-800 text-blue-400 text-xs">TEST VERSIONE</button>
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="sendUniversal('11ef03ea0000f4')" class="bg-slate-800 border border-slate-700 p-3 rounded-xl text-blue-300 font-bold">
+                    🔋 BATTERIA
+                </button>
+                <button onclick="sendUniversal('11ef03e80000f6')" class="bg-slate-800 border border-slate-700 p-3 rounded-xl text-blue-300 font-bold">
+                    📄 VERSIONE
+                </button>
             </div>
 
-            <button onclick="startCoges()" class="bg-orange-600 p-4 rounded font-black text-white shadow-lg shadow-orange-900/20 active:scale-95 transition-transform">
-                🔍 SCAN COGES (14443B)
+            <button onclick="fullScanSequence()" class="w-full bg-orange-600 hover:bg-orange-500 text-white font-black py-5 rounded-2xl shadow-xl border-t border-orange-400/30">
+                🔍 SCAN COGES (14443-B)
             </button>
         </div>
 
-        <div id="terminal" class="bg-slate-900 border border-slate-800 h-64 overflow-y-auto p-3 text-[10px] rounded mb-2">
-            <div class="text-slate-600 italic tracking-widest mb-2 border-b border-slate-800">Console Logs</div>
+        <div id="terminal" class="mt-6 bg-black rounded-xl h-64 overflow-y-auto p-4 border border-slate-800 shadow-inner">
+            <div class="text-slate-600 mb-2 border-b border-slate-900 pb-1 italic">Waiting for connection...</div>
         </div>
         
-        <button onclick="document.getElementById('terminal').innerHTML=''" class="text-[9px] text-slate-600 underline uppercase">Reset Log</button>
+        <div class="mt-4 flex justify-between px-2 text-[9px] text-slate-500 uppercase font-bold">
+            <span id="write-mode">Mode: Auto</span>
+            <button onclick="document.getElementById('terminal').innerHTML=''">Clear Console</button>
+        </div>
     </div>
 
     <script>
-        const SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-        const TX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-        const RX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+        const UART_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const TX_CHAR = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+        const RX_CHAR = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-        let gatt, tx, rx;
+        let device, txCharacteristic;
 
         function log(msg, color = "text-slate-500") {
             const t = document.getElementById('terminal');
-            t.innerHTML += `<div class="${color} mb-1"> ${msg}</div>`;
+            const div = document.createElement('div');
+            div.className = color + " mb-1 leading-tight";
+            div.innerHTML = `> ${msg}`;
+            t.appendChild(div);
             t.scrollTop = t.scrollHeight;
         }
 
         async function connect() {
             try {
-                log("Cercando...", "text-yellow-500");
-                const dev = await navigator.bluetooth.requestDevice({
+                log("Avvio scansione...", "text-yellow-500");
+                device = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'Chameleon' }],
-                    optionalServices: [SERVICE]
+                    optionalServices: [UART_SERVICE]
                 });
                 
                 log("Connessione GATT...");
-                gatt = await dev.gatt.connect();
-                const svc = await gatt.getPrimaryService(SERVICE);
-                tx = await svc.getCharacteristic(TX_UUID);
-                rx = await svc.getCharacteristic(RX_UUID);
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(UART_SERVICE);
+                txCharacteristic = await service.getCharacteristic(TX_CHAR);
+                const rx = await service.getCharacteristic(RX_CHAR);
 
                 await rx.startNotifications();
                 rx.oncharacteristicvaluechanged = (e) => {
-                    const bytes = new Uint8Array(e.target.value.buffer);
-                    const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
-                    log(`<- RECV: ${hex.toUpperCase()}`, "text-green-400 font-bold");
+                    const val = new Uint8Array(e.target.value.buffer);
+                    const hex = Array.from(val).map(b => b.toString(16).padStart(2, '0')).join(' ');
+                    log(`RCVD: ${hex.toUpperCase()}`, "text-green-400 font-bold");
                 };
 
-                log("PRONTO!", "text-green-500 font-bold");
-                document.getElementById('conn-btn').innerText = "CONNESSO";
+                log("CONNESSO!", "text-green-500 font-bold");
+                document.getElementById('conn-btn').innerText = "✅ DISPOSITIVO PRONTO";
+                document.getElementById('conn-btn').className = "w-full bg-green-900/40 text-green-400 p-4 rounded-2xl border border-green-800";
+                
+                // Determina il metodo di scrittura supportato
+                const props = txCharacteristic.properties;
+                log(`Write: ${props.write}, WriteNoResp: ${props.writeWithoutResponse}`, "text-slate-600");
             } catch (err) {
-                log("ERRORE: " + err.message, "text-red-500");
+                log("ERRORE: " + err, "text-red-500");
             }
         }
 
-        async function sendRaw(hex) {
-            if (!tx) return log("NON CONNESSO!", "text-red-500");
+        async function sendUniversal(hex) {
+            if (!txCharacteristic) return log("ERRORE: Non connesso", "text-red-500");
             try {
                 const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
-                // Alcuni dispositivi preferiscono writeValueWithResponse
-                await tx.writeValue(bytes);
-                log(`-> SEND: ${hex.toUpperCase()}`, "text-blue-400");
+                
+                // Tenta prima la scrittura senza risposta (più veloce, spesso richiesta dai moduli seriali)
+                if (txCharacteristic.properties.writeWithoutResponse) {
+                    await txCharacteristic.writeValueWithoutResponse(bytes);
+                } else {
+                    await txCharacteristic.writeValueWithResponse(bytes);
+                }
+                
+                log(`SENT: ${hex.toUpperCase()}`, "text-blue-400 text-[9px]");
             } catch (e) {
-                log("ERRORE INVIO: " + e.message, "text-red-500");
+                log("INVIO FALLITO: " + e.message, "text-red-500");
             }
         }
 
-        async function startCoges() {
-            log("AVVIO SEQUENZA COGES...", "text-orange-500 font-bold");
-            // 1. Forza Antenna ON (CMD 1008)
-            await sendRaw('11ef03f0010001f4');
-            await new Promise(r => setTimeout(r, 150));
-            // 2. Scan B (CMD 1014 con param 02)
-            await sendRaw('11ef03f6010002f3');
+        async function fullScanSequence() {
+            log("INIZIO SEQUENZA COGES...", "text-orange-500 font-bold underline");
+            
+            // 1. Reset Antenna (OFF)
+            await sendUniversal('11ef03f0010000f5'); 
+            await new Promise(r => setTimeout(r, 200));
+            
+            // 2. Antenna ON (Modalità 14443-B)
+            await sendUniversal('11ef03f0010001f4');
+            await new Promise(r => setTimeout(r, 200));
+
+            // 3. Comando SCAN (B)
+            await sendUniversal('11ef03f6010002f3');
+            
+            log("Appoggia la chiave ora!", "text-white animate-pulse");
         }
 
         document.getElementById('conn-btn').onclick = connect;
