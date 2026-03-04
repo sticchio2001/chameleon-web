@@ -6,9 +6,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', monospace; }
-        .terminal { background: #000; border: 1px solid #30363d; height: 250px; overflow-y: auto; font-size: 11px; color: #8b949e; }
+        .terminal { background: #000; border: 1px solid #30363d; height: 180px; overflow-y: auto; font-size: 11px; color: #8b949e; }
         .box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
-        .data-card { background: #0d1117; border-left: 4px solid #238636; }
+        .btn-action { @apply bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold transition-all disabled:opacity-30; }
     </style>
 </head>
 <body class="p-6">
@@ -17,31 +17,25 @@
             <h1 class="text-2xl font-bold text-blue-500 italic">
                 MICROEL <span class="text-white font-light">ULTRA</span>
             </h1>
-            <div class="space-x-2">
-                <button id="btn-connect" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold transition-all shadow-lg">
-                    CONNETTI
-                </button>
-                <button id="btn-scan" class="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg font-bold transition-all shadow-lg opacity-50 cursor-not-allowed" disabled>
-                    LEGGI TESSERA
-                </button>
+            <div class="flex gap-2">
+                <button id="btn-connect" class="btn-action">CONNETTI</button>
+                <button id="btn-read" class="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg font-bold transition-all disabled:opacity-30" disabled>LEGGI MIFARE</button>
             </div>
         </div>
 
         <div class="grid grid-cols-2 gap-4 mb-6">
-            <div class="box p-4">
-                <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">UID Rilevato</div>
-                <div id="uid-val" class="text-xl font-mono text-blue-400">-- -- -- --</div>
+            <div class="box p-4 border-l-4 border-blue-500">
+                <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">UID</div>
+                <div id="uid-display" class="text-xl font-mono text-white tracking-widest">-- -- -- --</div>
             </div>
-            <div class="box p-4">
+            <div class="box p-4 border-l-4 border-orange-500">
                 <div class="text-[10px] text-gray-500 uppercase font-bold mb-1">Microel Key A</div>
-                <div id="key-val" class="text-xl font-mono text-orange-400">-- -- -- -- -- --</div>
+                <div id="key-display" class="text-xl font-mono text-orange-400">-- -- -- -- -- --</div>
             </div>
         </div>
 
         <div id="terminal" class="terminal p-4 rounded-lg shadow-inner">
-            <div class="text-yellow-600 italic uppercase text-[9px] mb-2 tracking-widest">
-                Console Output
-            </div>
+            <div class="text-yellow-600 italic uppercase text-[9px] mb-2 tracking-widest">Console Output</div>
         </div>
     </div>
 
@@ -50,7 +44,7 @@ const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const TX_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 const RX_UUID      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-let device = null, tx = null, rx = null;
+let tx = null;
 
 function log(msg, color = "text-slate-400") {
     const term = document.getElementById('terminal');
@@ -58,101 +52,76 @@ function log(msg, color = "text-slate-400") {
     term.scrollTop = term.scrollHeight;
 }
 
-// Calcolo Checksum LRC richiesto dal Chameleon
-function calcLRC(data) {
-    return data.reduce((acc, byte) => acc ^ byte, 0);
-}
-
-// Funzione Microel per derivare la chiave A dall'UID
-function deriveMicroelKey(uidArr) {
-    let sum = uidArr.reduce((a, b) => a + b, 0) & 0xFF;
+// Formula Microel Key A
+function getMicroelKey(uid) {
+    let sum = uid.reduce((a, b) => a + b, 0) & 0xFF;
     let b7 = (sum >> 4) & 0x0F, b8 = sum & 0x0F;
     let cond = (b7==0||(b7==1&&b8!=15)||b7==4||(b7==5&&b8!=15)||b7==8||(b7==9&&b8!=15)||b7==12||(b7==13&&b8!=15)||sum==63||sum==127||sum==191||sum==255);
     let k = cond ? (sum + 1) : (sum + 65);
-    return [k, k^0x93, k^0xA6, k^0x74, k^0x2A, k^0xF8];
+    return [k, k^147, k^166, k^116, k^42, k^248];
 }
 
 async function connect() {
     try {
-        log("Richiesta dispositivo...", "text-yellow-400");
-        device = await navigator.bluetooth.requestDevice({
+        const device = await navigator.bluetooth.requestDevice({
             filters: [{ namePrefix: 'Chameleon' }],
             optionalServices: [SERVICE_UUID]
         });
-
         const server = await device.gatt.connect();
         const service = await server.getPrimaryService(SERVICE_UUID);
         tx = await service.getCharacteristic(TX_UUID);
-        rx = await service.getCharacteristic(RX_UUID);
+        const rx = await service.getCharacteristic(RX_UUID);
 
         await rx.startNotifications();
-        rx.addEventListener('characteristicvaluechanged', handleNotifications);
+        rx.addEventListener('characteristicvaluechanged', handleRx);
 
-        log("BLE PRONTO", "text-blue-500 font-bold");
-        document.getElementById('btn-scan').disabled = false;
-        document.getElementById('btn-scan').classList.remove('opacity-50', 'cursor-not-allowed');
-        document.getElementById('btn-connect').innerText = "CONNESSO";
-
-    } catch (error) {
-        log("ERRORE: " + error.message, "text-red-500");
-    }
+        log("CONNESSO", "text-green-400 font-bold");
+        document.getElementById('btn-read').disabled = false;
+        document.getElementById('btn-connect').innerText = "ONLINE";
+    } catch (e) { log("ERRORE: " + e.message, "text-red-500"); }
 }
 
-async function sendCmd(cmdId, data = []) {
-    if (!tx) return;
-    // Pacchetto: 0x11 0xEF | CMD_L CMD_H | LEN_L LEN_H | DATA... | LRC
-    let frame = [0x11, 0xEF, cmdId & 0xFF, (cmdId >> 8) & 0xFF, data.length & 0xFF, (data.length >> 8) & 0xFF, ...data];
-    frame.push(calcLRC(frame));
+async function sendCommand(cmd, data = []) {
+    // Protocollo Chameleon Ultra: Header(11 EF) + CMD(2b) + LEN(2b) + DATA + LRC
+    let pkt = [0x11, 0xEF, cmd & 0xFF, (cmd >> 8) & 0xFF, data.length & 0xFF, (data.length >> 8) & 0xFF, ...data];
+    let lrc = pkt.reduce((acc, b) => acc ^ b, 0);
+    pkt.push(lrc);
     
-    await tx.writeValueWithoutResponse(new Uint8Array(frame));
+    log(`-> TX CMD ${cmd}`, "text-purple-400");
+    await tx.writeValueWithoutResponse(new Uint8Array(pkt));
 }
 
-async function startScan() {
-    log("Inizializzazione Scan Mifare...", "text-white");
-    try {
-        // 1. Imposta Reader Mode (CMD 1000)
-        await sendCmd(1000, [0x01]);
-        await new Promise(r => setTimeout(r, 100));
-
-        // 2. Accendi Antenna (CMD 1008)
-        await sendCmd(1008, [0x01]);
-        await new Promise(r => setTimeout(r, 100));
-
-        // 3. Scan ISO14443A (CMD 1014) - Dovrebbe accendere il LED BIANCO
-        await sendCmd(1014, [0x01]);
-        log("Antenna attiva. Avvicina il tag.", "text-green-500");
-    } catch (err) {
-        log("Errore durante lo scan: " + err.message, "text-red-400");
-    }
-}
-
-function handleNotifications(event) {
+function handleRx(event) {
     const val = new Uint8Array(event.target.value.buffer);
     const hex = [...val].map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase();
-    
-    // Rilevamento risposta Scan (CMD 1014 ha ID 0x14 0x10 nei byte 2 e 3)
-    if (val[0] === 0x11 && val[2] === 0x14) {
-        if (val.length > 10) { // Se ci sono dati oltre l'header
-            const uid = Array.from(val.slice(6, 10));
-            const uidHex = uid.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
-            
-            document.getElementById('uid-val').innerText = uidHex;
-            
-            // Calcola e mostra la chiave Microel
-            const key = deriveMicroelKey(uid);
-            document.getElementById('key-val').innerText = key.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
-            
-            log("TESSERA RILEVATA: " + uidHex, "text-green-400 font-bold");
-        } else {
-            log("Nessun tag nel campo.", "text-zinc-500");
-        }
-    } else {
-        log("<- RX: " + hex, "text-blue-400");
+    log("<- RX: " + hex, "text-blue-400");
+
+    // Rilevamento risposta SCAN (ID 1014 -> 0x14 0x03)
+    // Nota: La documentazione indica che l'UID inizia dopo l'header del pacchetto di risposta
+    if (val[0] === 0x11 && val[2] === 0x14 && val.length >= 10) {
+        const uid = Array.from(val.slice(6, 10));
+        const uidHex = uid.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+        
+        document.getElementById('uid-display').innerText = uidHex;
+        const key = getMicroelKey(uid);
+        document.getElementById('key-display').innerText = key.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+        log("TAG RILEVATO: " + uidHex, "text-green-400 font-bold");
     }
 }
 
-document.getElementById('btn-connect').addEventListener('click', connect);
-document.getElementById('btn-scan').addEventListener('click', startScan);
+async function startReading() {
+    // 1. Imposta Modalità Reader (1000)
+    await sendCommand(1000, [0x01]); 
+    await new Promise(r => setTimeout(r, 150));
+    
+    // 2. Scan HF ISO14443A (1014)
+    // Parametro 0x01 attiva il polling continuo
+    await sendCommand(1014, [0x01]);
+    log("Scanning... Avvicina tessera", "text-blue-300 animate-pulse");
+}
+
+document.getElementById('btn-connect').onclick = connect;
+document.getElementById('btn-read').onclick = startReading;
 </script>
 </body>
 </html>
