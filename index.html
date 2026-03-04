@@ -3,105 +3,97 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chameleon Ultra - Coges Simple</title>
+    <title>Chameleon Ultra - Debug Mode</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { background-color: #0f172a; color: #f1f5f9; font-family: monospace; }
-        .terminal { background: #000; border: 1px solid #334155; height: 350px; overflow-y: auto; padding: 10px; font-size: 0.75rem; }
-        .btn { background: #1e293b; border: 1px solid #334155; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; }
-        .btn:active { background: #334155; }
-    </style>
 </head>
-<body class="p-4">
+<body class="bg-black text-slate-300 p-5 font-mono text-sm">
 
     <div class="max-w-md mx-auto">
-        <h1 class="text-xl font-bold mb-4 text-blue-400">Chameleon V1-Modified</h1>
+        <h1 class="text-orange-500 font-bold mb-4 border-b border-orange-900 pb-2">CHAMELEON DEBUG V2</h1>
 
-        <div class="grid gap-4 mb-4">
-            <button id="connect-btn" class="btn bg-blue-600 border-none">1. CONNETTI</button>
+        <div class="flex flex-col gap-3 mb-6">
+            <button id="conn-btn" class="bg-slate-800 p-4 rounded border border-slate-700 font-bold active:bg-slate-700">1. COLLEGA BLUETOOTH</button>
             
             <div class="grid grid-cols-2 gap-2">
-                <button onclick="sendHex('11ef03e80000f6')" class="btn text-blue-300">Info Versione</button>
-                <button onclick="sendHex('11ef03ea0000f4')" class="btn text-green-300">Info Batteria</button>
+                <button onclick="sendRaw('11ef03ea0000f4')" class="bg-blue-900/30 p-3 rounded border border-blue-800 text-blue-400 text-xs">TEST BATTERIA</button>
+                <button onclick="sendRaw('11ef03e80000f6')" class="bg-blue-900/30 p-3 rounded border border-blue-800 text-blue-400 text-xs">TEST VERSIONE</button>
             </div>
 
-            <button onclick="scanCoges()" class="btn bg-orange-600/50 text-orange-200 border-orange-500">
+            <button onclick="startCoges()" class="bg-orange-600 p-4 rounded font-black text-white shadow-lg shadow-orange-900/20 active:scale-95 transition-transform">
                 🔍 SCAN COGES (14443B)
             </button>
         </div>
 
-        <div class="terminal mb-2" id="terminal">
-            <div class="text-slate-500 italic">-- Log di sistema --</div>
+        <div id="terminal" class="bg-slate-900 border border-slate-800 h-64 overflow-y-auto p-3 text-[10px] rounded mb-2">
+            <div class="text-slate-600 italic tracking-widest mb-2 border-b border-slate-800">Console Logs</div>
         </div>
         
-        <button onclick="document.getElementById('terminal').innerHTML=''" class="text-[10px] underline text-slate-500">Pulisci Log</button>
+        <button onclick="document.getElementById('terminal').innerHTML=''" class="text-[9px] text-slate-600 underline uppercase">Reset Log</button>
     </div>
 
     <script>
-        const UART_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-        const TX_CHAR = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-        const RX_CHAR = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+        const SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const TX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+        const RX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-        let device, tx, rx;
+        let gatt, tx, rx;
 
-        function log(msg, color = "text-slate-400") {
-            const div = document.createElement('div');
-            div.className = color;
-            div.innerText = `[${new Date().toLocaleTimeString().split(' ')[0]}] ${msg}`;
-            document.getElementById('terminal').appendChild(div);
-            document.getElementById('terminal').scrollTop = 9999;
+        function log(msg, color = "text-slate-500") {
+            const t = document.getElementById('terminal');
+            t.innerHTML += `<div class="${color} mb-1"> ${msg}</div>`;
+            t.scrollTop = t.scrollHeight;
         }
 
         async function connect() {
             try {
-                log("Ricerca...");
-                device = await navigator.bluetooth.requestDevice({
+                log("Cercando...", "text-yellow-500");
+                const dev = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'Chameleon' }],
-                    optionalServices: [UART_SERVICE]
+                    optionalServices: [SERVICE]
                 });
-                const server = await device.gatt.connect();
-                const service = await server.getPrimaryService(UART_SERVICE);
-                tx = await service.getCharacteristic(TX_CHAR);
-                rx = await service.getCharacteristic(RX_CHAR);
+                
+                log("Connessione GATT...");
+                gatt = await dev.gatt.connect();
+                const svc = await gatt.getPrimaryService(SERVICE);
+                tx = await svc.getCharacteristic(TX_UUID);
+                rx = await svc.getCharacteristic(RX_UUID);
 
                 await rx.startNotifications();
-                rx.addEventListener('characteristicvaluechanged', (e) => {
-                    let hex = Array.from(new Uint8Array(e.target.value.buffer))
-                                   .map(b => b.toString(16).padStart(2, '0')).join(' ');
-                    log(`<- ${hex.toUpperCase()}`, "text-green-400");
-                });
+                rx.oncharacteristicvaluechanged = (e) => {
+                    const bytes = new Uint8Array(e.target.value.buffer);
+                    const hex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ');
+                    log(`<- RECV: ${hex.toUpperCase()}`, "text-green-400 font-bold");
+                };
 
-                log("CONNESSO!", "text-blue-400 font-bold");
-                document.getElementById('connect-btn').innerText = "DISCONNETTI";
+                log("PRONTO!", "text-green-500 font-bold");
+                document.getElementById('conn-btn').innerText = "CONNESSO";
             } catch (err) {
-                log("Errore: " + err, "text-red-500");
+                log("ERRORE: " + err.message, "text-red-500");
             }
         }
 
-        async function sendHex(hexStr) {
-            if (!tx) return log("NON CONNESSO", "text-red-500");
-            const bytes = new Uint8Array(hexStr.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-            await tx.writeValue(bytes);
-            log(`-> ${hexStr.toUpperCase()}`, "text-slate-500");
+        async function sendRaw(hex) {
+            if (!tx) return log("NON CONNESSO!", "text-red-500");
+            try {
+                const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+                // Alcuni dispositivi preferiscono writeValueWithResponse
+                await tx.writeValue(bytes);
+                log(`-> SEND: ${hex.toUpperCase()}`, "text-blue-400");
+            } catch (e) {
+                log("ERRORE INVIO: " + e.message, "text-red-500");
+            }
         }
 
-        async function scanCoges() {
-            log("Avvio scansione ISO 14443-B...", "text-orange-400");
-            
-            // In questa versione usiamo i comandi HEX "pre-calcolati" per evitare errori di checksum
-            // 1. Reset/Antenna ON (11 EF 03 F0 01 00 01 f4) - Esempio CMD_SET_ANTENNA_ON
-            await sendHex('11ef03f0010001f4'); 
-            await new Promise(r => setTimeout(r, 100));
-
-            // 2. Scan B (11 EF 03 F6 01 00 02 f3) - CMD_HF_SCAN con parametro 02
-            // Questo comando accenderà il LED e cercherà la chiave
-            await sendHex('11ef03f6010002f3');
+        async function startCoges() {
+            log("AVVIO SEQUENZA COGES...", "text-orange-500 font-bold");
+            // 1. Forza Antenna ON (CMD 1008)
+            await sendRaw('11ef03f0010001f4');
+            await new Promise(r => setTimeout(r, 150));
+            // 2. Scan B (CMD 1014 con param 02)
+            await sendRaw('11ef03f6010002f3');
         }
 
-        document.getElementById('connect-btn').onclick = () => {
-            if (device?.gatt.connected) { device.gatt.disconnect(); location.reload(); }
-            else { connect(); }
-        };
+        document.getElementById('conn-btn').onclick = connect;
     </script>
 </body>
 </html>
