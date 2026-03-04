@@ -1,97 +1,54 @@
 <!DOCTYPE html>
-<html lang="it">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Chameleon Ultra - HARD RESET & SCAN</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+  <meta charset="UTF-8">
+  <title>BLE WebApp</title>
 </head>
-<body class="bg-black text-green-500 font-mono p-6">
-    <div class="max-w-xl mx-auto border-2 border-green-700 p-6 bg-zinc-950 shadow-lg">
-        <h1 class="text-center font-bold text-xl mb-6">CHAMELEON USB RECOVERY</h1>
+<body>
+  <h1>Connessione Bluetooth</h1>
+  <button id="connectBtn">Connetti</button>
+  <pre id="log"></pre>
 
-        <div class="flex gap-4 mb-6">
-            <button id="connect" class="flex-1 bg-green-900 text-white p-4 font-bold border border-green-500 hover:bg-green-700">
-                1. CONNETTI USB
-            </button>
-            <button onclick="hardResetScan()" class="flex-1 bg-blue-900 text-white p-4 font-bold border border-blue-500 hover:bg-blue-700">
-                2. RESET & SCAN (LED)
-            </button>
-        </div>
+<script>
+let device;
+let characteristic;
 
-        <div class="bg-black border border-green-900 p-4 mb-4">
-            <div class="text-[10px] text-green-700 uppercase">Status Log:</div>
-            <div id="console" class="h-48 overflow-y-auto text-[11px] mt-2">Attesa...</div>
-        </div>
+const SERVICE_UUID = '0000xxxx-0000-1000-8000-00805f9b34fb'; // UUID del servizio
+const CHARACTERISTIC_UUID = '0000yyyy-0000-1000-8000-00805f9b34fb'; // UUID della characteristic
 
-        <div class="p-4 bg-zinc-900 border border-zinc-700 rounded text-center">
-            <span class="text-xs text-zinc-500 uppercase">UID Rilevato</span>
-            <div id="uid-val" class="text-2xl font-black text-white tracking-widest mt-2">-- -- -- --</div>
-        </div>
-    </div>
+document.getElementById('connectBtn').addEventListener('click', async () => {
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }]
+    });
 
-    <script>
-        let port, writer, reader;
-        const decoder = new TextDecoder();
-        const encoder = new TextEncoder();
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
 
-        const log = (m) => {
-            const c = document.getElementById('console');
-            c.innerHTML += `<div>> ${m}</div>`;
-            c.scrollTop = c.scrollHeight;
-        };
+    log("Connesso al dispositivo");
 
-        document.getElementById('connect').onclick = async () => {
-            try {
-                port = await navigator.serial.requestPort();
-                await port.open({ baudRate: 115200 });
-                log("USB CONNESSA.");
-                listen();
-            } catch (e) { log("ERRORE: " + e.message); }
-        };
+    characteristic.startNotifications();
+    characteristic.addEventListener('characteristicvaluechanged', handleNotification);
 
-        async function listen() {
-            while (port.readable) {
-                reader = port.readable.getReader();
-                try {
-                    while (true) {
-                        const { value, done } = await reader.read();
-                        if (done) break;
-                        const text = decoder.decode(value);
-                        log("RX: " + text.trim());
-                        
-                        // Cerca UID nella risposta testuale
-                        if (text.includes("UID:")) {
-                            const match = text.match(/UID:\s*([A-Fa-f0-9\s]+)/);
-                            if (match) document.getElementById('uid-val').innerText = match[1].trim();
-                        }
-                    }
-                } catch (e) { log("ERR: " + e.message); } finally { reader.releaseLock(); }
-            }
-        }
+  } catch (error) {
+    log("Errore: " + error);
+  }
+});
 
-        async function hardResetScan() {
-            if (!port) return alert("Collega USB!");
-            writer = port.writable.getWriter();
-            
-            try {
-                log("INVIO HARD RESET HARDWARE...");
-                
-                // Sequenza di comandi CLI per sbloccare il chip radio
-                const cmds = [
-                    "\r\n",             // Pulisce la riga
-                    "hw reset\r\n",     // Reset hardware
-                    "hf mf cscan\r\n"   // Scan Mifare Classic
-                ];
+function handleNotification(event) {
+  const value = new TextDecoder().decode(event.target.value);
+  log("Ricevuto: " + value);
+}
 
-                for (let c of cmds) {
-                    await writer.write(encoder.encode(c));
-                    log("TX: " + c.trim());
-                    await new Promise(r => setTimeout(r, 1000)); // Aspetta il boot del reset
-                }
-                
-                log("TENTATIVO COMPLETATO. Guarda il LED bianco.");
-            } catch (e) { log("ERR TX: " + e.message); } finally { writer.releaseLock(); }
-        }
-    </script>
+async function sendCommand(cmd) {
+  const encoder = new TextEncoder();
+  await characteristic.writeValue(encoder.encode(cmd));
+}
+
+function log(msg) {
+  document.getElementById('log').textContent += msg + "\n";
+}
+</script>
 </body>
 </html>
