@@ -2,46 +2,44 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <title>Microel Pro - Chameleon Ultra</title>
+    <title>Microel Analyzer - Chameleon Ultra Fix</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { background: #0d1117; color: #c9d1d9; font-family: 'Consolas', monospace; }
-        .terminal { background: #000; border: 1px solid #30363d; height: 200px; overflow-y: auto; font-size: 11px; color: #8b949e; }
-        .box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+        .terminal { background: #000; border: 1px solid #30363d; height: 250px; overflow-y: auto; font-size: 11px; color: #8b949e; padding: 10px; }
+        .box { background: #161b22; border: 1px solid #30363d; border-radius: 12px; }
     </style>
 </head>
 <body class="p-6">
     <div class="max-w-2xl mx-auto">
-        <div class="flex justify-between items-center mb-6">
-            <h1 class="text-2xl font-bold text-blue-500 italic">MICROEL <span class="text-white font-light text-sm uppercase tracking-widest">Ultra Link</span></h1>
-            <button id="btn-connect" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition-all active:scale-95">
+        <header class="mb-6 text-center">
+            <h1 class="text-2xl font-black text-blue-500 italic">MICROEL <span class="text-white font-light">PRO</span></h1>
+            <p class="text-[10px] text-slate-500 uppercase tracking-widest mt-1">Chameleon Ultra NFC Interface</p>
+        </header>
+
+        <div class="box p-6 mb-6 flex justify-between items-center border-l-4 border-blue-600">
+            <div>
+                <div id="status-text" class="text-red-500 font-bold text-xs uppercase">Stato: Disconnesso</div>
+                <div id="uid-display" class="text-blue-400 text-lg font-bold mt-1 tracking-widest">UID: -- -- -- --</div>
+            </div>
+            <button id="btn-connect" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl font-bold transition-all shadow-lg active:scale-95">
                 CONNETTI
             </button>
         </div>
 
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-center">
-            <div class="box p-3"><label class="block text-[10px] text-gray-500 uppercase">Credito</label><span id="d-cred" class="text-xl font-bold text-green-400">-- €</span></div>
-            <div class="box p-3"><label class="block text-[10px] text-gray-500 uppercase">Operazioni</label><span id="d-op" class="text-xl font-bold text-orange-400">--</span></div>
-            <div class="box p-3"><label class="block text-[10px] text-gray-500 uppercase">Tot. Ingr.</label><span id="d-tot" class="text-xl font-bold text-blue-400">-- €</span></div>
-            <div class="box p-3"><label class="block text-[10px] text-gray-500 uppercase">UID</label><span id="d-uid" class="text-[10px] font-bold block mt-2 tracking-tighter text-slate-400">--</span></div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="box p-3 text-center"><label class="block text-[9px] text-slate-500 uppercase">Credito</label><span id="d-cred" class="text-xl font-bold text-green-400">-- €</span></div>
+            <div class="box p-3 text-center"><label class="block text-[9px] text-slate-500 uppercase">Operazioni</label><span id="d-op" class="text-xl font-bold text-orange-400">--</span></div>
+            <div class="box p-3 text-center"><label class="block text-[9px] text-slate-500 uppercase">Tot. Ingr.</label><span id="d-tot" class="text-xl font-bold">-- €</span></div>
+            <div class="box p-3 text-center"><label class="block text-[9px] text-slate-500 uppercase">Key A</label><span id="d-key" class="text-[9px] text-blue-300 font-bold block mt-1">--</span></div>
         </div>
 
-        <div class="box p-6 mb-6">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <select id="amountSel" class="bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none text-sm">
-                    <option value="100">1.00 €</option>
-                    <option value="500">5.00 €</option>
-                    <option value="1000" selected>10.00 €</option>
-                </select>
-                <div class="flex gap-2">
-                    <button onclick="startAnalyze()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg text-xs">ANALISI</button>
-                    <button onclick="startReload()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg text-xs uppercase">Ricarica</button>
-                </div>
-            </div>
-        </div>
+        <button onclick="startAnalyze()" class="w-full bg-slate-800 hover:bg-slate-700 text-white p-4 rounded-xl font-bold mb-4 border border-slate-600 transition-all">
+            🔍 AVVIA ANALISI (SCAN TAG)
+        </button>
 
-        <div id="terminal" class="terminal p-4 rounded-lg shadow-inner">
-            <div class="text-slate-600 italic text-[9px] mb-2">Attesa connessione...</div>
+        <div id="terminal" class="terminal rounded-xl shadow-inner mb-4">
+            <div class="text-slate-600 italic tracking-widest">Attesa comando...</div>
         </div>
     </div>
 
@@ -50,9 +48,15 @@
         const TX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
         const RX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-        let tx, rx, device;
+        let txChar, rxChar, device;
 
-        // --- Logica Calcolo Chiavi (Source: 14, 15) ---
+        function log(msg, color = "text-slate-500") {
+            const term = document.getElementById('terminal');
+            term.innerHTML += `<div class="${color}">[${new Date().toLocaleTimeString().split(' ')[0]}] ${msg}</div>`;
+            term.scrollTop = term.scrollHeight;
+        }
+
+        // --- Logica Calcolo Chiavi Microel ---
         function deriveKeys(uid) {
             let sommaUID = uid.reduce((a, b) => a + b, 0);
             let b6_v = sommaUID & 0xFF;
@@ -64,58 +68,72 @@
             return kA;
         }
 
-        // --- Decodifica Microel (Source: 2, 20, 21, 23) ---
-        function parseBlock4(block) {
-            const op = (block[1] << 8) | block[0];
-            const tot = ((block[3] << 8) | block[2]) / 10.0;
-            const cred = ((block[6] << 8) | block[5]) / 100.0;
-            
-            document.getElementById('d-cred').innerText = cred.toFixed(2) + " €";
-            document.getElementById('d-op').innerText = op;
-            document.getElementById('d-tot').innerText = tot.toFixed(1) + " €";
-            log(`DECODED: Credito ${cred}€, Operazioni ${op}`, "text-green-400");
+        async function sendRawHex(hex) {
+            if (!txChar) return;
+            const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+            await txChar.writeValue(bytes);
+            log(`-> ${hex.toUpperCase()}`, "text-blue-900");
         }
 
-        function log(msg, color = "text-slate-500") {
-            const t = document.getElementById('terminal');
-            t.innerHTML += `<div class="${color}">[${new Date().toLocaleTimeString().split(' ')[0]}] ${msg}</div>`;
-            t.scrollTop = t.scrollHeight;
-        }
-
-        async function connect() {
+        document.getElementById('btn-connect').onclick = async () => {
             try {
-                log("Apertura selettore Bluetooth...");
                 device = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'Chameleon' }],
                     optionalServices: [SERVICE_UUID]
                 });
-                
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
-                tx = await service.getCharacteristic(TX_UUID);
-                rx = await service.getCharacteristic(RX_UUID);
+                txChar = await service.getCharacteristic(TX_UUID);
+                rxChar = await service.getCharacteristic(RX_UUID);
 
-                await rx.startNotifications();
-                rx.oncharacteristicvaluechanged = (e) => {
-                    const val = new Uint8Array(e.target.value.buffer);
-                    log("<- " + Array.from(val).map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase());
-                };
+                await rxChar.startNotifications();
+                rxChar.oncharacteristicvaluechanged = handleRX;
 
-                log("CONNESSO!", "text-blue-400 font-bold");
-                document.getElementById('btn-connect').innerText = "ONLINE";
-                document.getElementById('btn-connect').className = "bg-green-600 text-white px-6 py-2 rounded-lg font-bold";
+                document.getElementById('status-text').innerText = "Stato: Connesso";
+                document.getElementById('status-text').className = "text-green-500 font-bold text-xs";
+                log("CHAMELEON PRONTO", "text-green-500 font-bold");
             } catch (err) {
-                log("ERRORE: " + err.message, "text-red-500");
+                log("Errore: " + err.message, "text-red-500");
+            }
+        };
+
+        function handleRX(event) {
+            let val = new Uint8Array(event.target.value.buffer);
+            let hex = Array.from(val).map(b => b.toString(16).padStart(2,'0')).join('').toUpperCase();
+            log(`<- ${hex}`, "text-green-400");
+
+            // Se è una risposta a un comando di SCAN (contiene l'UID)
+            // Nel protocollo Ultra, la risposta 11 EF ... contiene i dati dell'UID dopo l'header
+            if (hex.startsWith("11EF") && val.length > 10) {
+                let uid = Array.from(val.slice(6, 10)); // Estraiamo 4 byte di UID
+                let uidStr = uid.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+                document.getElementById('uid-display').innerText = `UID: ${uidStr}`;
+                
+                let keyA = deriveKeys(uid);
+                document.getElementById('d-key').innerText = keyA.map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+                log(`UID RILEVATO: ${uidStr}`, "text-blue-400 font-bold");
             }
         }
 
         async function startAnalyze() {
-            if(!tx) return log("Non connesso!", "text-red-500");
-            log("Richiesta SCAN HF (UID)...", "text-yellow-500");
-            // Comando Chameleon per Scan UID (11 EF F6 03...)
-        }
+            if(!txChar) return log("Connetti prima!", "text-red-500");
+            
+            log("Configurazione Reader...", "text-yellow-600");
 
-        document.getElementById('btn-connect').onclick = connect;
+            // Sequenza corretta per Chameleon Ultra:
+            // 1. Imposta modalità Reader (CMD 1000, param 01)
+            await sendRawHex('11efe803010001f5'); 
+            await new Promise(r => setTimeout(r, 100));
+
+            // 2. Accendi Antenna (CMD 1008, param 01)
+            await sendRawHex('11eff003010001ed');
+            await new Promise(r => setTimeout(r, 100));
+
+            // 3. Esegui Scan Mifare (CMD 1014, param 01 per ISO14443A)
+            // Questo DEVE accendere il LED bianco
+            log("Scansione in corso (LED Bianco)...", "text-white font-bold");
+            await sendRawHex('11eff603010001e7');
+        }
     </script>
 </body>
 </html>
