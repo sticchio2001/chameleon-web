@@ -1,33 +1,127 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <title>Microel Pro - Chameleon Desktop</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', monospace; }
+        .terminal { background: #000; border: 1px solid #30363d; height: 180px; overflow-y: auto; font-size: 11px; color: #8b949e; }
+        .box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+    </style>
+</head>
+<body class="p-6">
+    <div class="max-w-2xl mx-auto">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold text-blue-500 italic">
+                MICROEL <span class="text-white font-light">ULTRA</span>
+            </h1>
+            <button id="btn-connect"
+                class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold transition-all shadow-lg">
+                CONNETTI
+            </button>
+        </div>
+
+        <div id="terminal" class="terminal p-4 rounded-lg shadow-inner">
+            <div class="text-yellow-600 italic uppercase text-[9px] mb-2 tracking-widest">
+                Console Output
+            </div>
+        </div>
+    </div>
+
+<script>
+/* =========================
+   UUID Nordic UART Service
+   ========================= */
+const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const TX_UUID      = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const RX_UUID      = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+
+let device = null;
+let tx = null;
+let rx = null;
+
+/* =========================
+   LOG
+   ========================= */
+function log(msg, color = "text-slate-400") {
+    const term = document.getElementById('terminal');
+    term.innerHTML += `<div class="${color}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+    term.scrollTop = term.scrollHeight;
+}
+
+/* =========================
+   CONNESSIONE BLE
+   ========================= */
 async function connect() {
     try {
+        if (!navigator.bluetooth) {
+            throw new Error("Web Bluetooth non supportato su questo browser");
+        }
+
+        log("Richiesta dispositivo...", "text-yellow-400");
+
         device = await navigator.bluetooth.requestDevice({
-            filters: [{ namePrefix: 'Chameleon' }],
+            acceptAllDevices: true,
             optionalServices: [SERVICE_UUID]
         });
 
         device.addEventListener('gattserverdisconnected', () => {
-            log("Disconnesso", "text-red-400");
+            log("Dispositivo disconnesso", "text-red-400");
             tx = null;
             rx = null;
         });
 
         const server = await device.gatt.connect();
+        log("Connesso al GATT server", "text-green-400");
+
         const service = await server.getPrimaryService(SERVICE_UUID);
+        log("Servizio UART trovato", "text-green-400");
 
         tx = await service.getCharacteristic(TX_UUID);
         rx = await service.getCharacteristic(RX_UUID);
 
         await rx.startNotifications();
 
-        rx.addEventListener('characteristicvaluechanged', (e) => {
-            const val = new Uint8Array(e.target.value);
-            const hex = [...val].map(b => b.toString(16).padStart(2,'0')).join(' ');
-            log("<- RX: " + hex.toUpperCase());
+        rx.addEventListener('characteristicvaluechanged', (event) => {
+            const value = new Uint8Array(event.target.value);
+            const hex = [...value]
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join(' ')
+                .toUpperCase();
+            log("<- RX: " + hex, "text-blue-400");
         });
 
-        log("CONNESSO!", "text-blue-400");
+        log("BLE PRONTO", "text-blue-500 font-bold");
 
-    } catch (err) {
-        log("ERRORE: " + err.message, "text-red-500");
+    } catch (error) {
+        log("ERRORE: " + error.message, "text-red-500");
     }
 }
+
+/* =========================
+   INVIO DATI
+   ========================= */
+async function send(dataArray) {
+    if (!tx) {
+        log("Non connesso!", "text-red-400");
+        return;
+    }
+
+    try {
+        const data = new Uint8Array(dataArray);
+        await tx.writeValueWithoutResponse(data);
+        log("-> TX: " + [...data].map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase(), "text-purple-400");
+    } catch (err) {
+        log("Errore invio: " + err.message, "text-red-400");
+    }
+}
+
+/* =========================
+   EVENT LISTENER
+   ========================= */
+document.getElementById('btn-connect').addEventListener('click', connect);
+</script>
+
+</body>
+</html>
