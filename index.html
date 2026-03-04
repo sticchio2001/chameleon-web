@@ -2,65 +2,46 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Microel Chameleon Analyzer - PC Edition</title>
+    <title>Microel Pro - Chameleon Ultra</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .terminal { background: #000; border: 1px solid #30363d; height: 250px; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 0.8rem; }
+        body { background: #0d1117; color: #c9d1d9; font-family: 'Consolas', monospace; }
+        .terminal { background: #000; border: 1px solid #30363d; height: 200px; overflow-y: auto; font-size: 11px; color: #8b949e; }
         .box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
-        .btn-action { transition: all 0.2s; cursor: pointer; }
-        .btn-action:active { transform: scale(0.98); }
     </style>
 </head>
 <body class="p-6">
     <div class="max-w-2xl mx-auto">
-        <header class="mb-8 text-center">
-            <h1 class="text-3xl font-black text-blue-500 italic tracking-tighter">MICROEL <span class="text-white">CHAMELEON</span></h1>
-            <p class="text-xs text-slate-500 uppercase tracking-widest mt-1">Chrome Desktop Interface</p>
-        </header>
-
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div class="box p-4 md:col-span-2 flex justify-between items-center border-l-4 border-red-500" id="conn-status-border">
-                <div>
-                    <div id="status-text" class="text-red-500 font-bold uppercase text-xs">🔴 Disconnesso</div>
-                    <div id="uid-display" class="text-blue-400 text-lg font-bold tracking-tight mt-1">UID: -- -- -- --</div>
-                </div>
-                <button id="btn-connect" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg font-bold transition-all shadow-lg btn-action">
-                    CONNETTI
-                </button>
-            </div>
-
-            <div class="box p-4 text-[10px]">
-                <label class="text-slate-500 block mb-1 uppercase">Key A Calcolata</label>
-                <div id="key-a-display" class="text-orange-400 font-bold text-sm">-- -- -- -- -- --</div>
-            </div>
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold text-blue-500 italic">MICROEL <span class="text-white font-light text-sm uppercase tracking-widest">Ultra Link</span></h1>
+            <button id="btn-connect" class="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition-all active:scale-95">
+                CONNETTI
+            </button>
         </div>
 
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-center">
-            <div class="box p-3"><label class="block text-[10px] text-slate-500 uppercase mb-1">Credito</label><span id="d-cred" class="text-xl font-bold text-green-400">-- €</span></div>
-            <div class="box p-3"><label class="block text-[10px] text-slate-500 uppercase mb-1">Operazioni</label><span id="d-op" class="text-xl font-bold text-orange-400">--</span></div>
-            <div class="box p-3"><label class="block text-[10px] text-slate-500 uppercase mb-1">Tot. Ingressi</label><span id="d-tot" class="text-xl font-bold">-- €</span></div>
-            <div class="box p-3"><label class="block text-[10px] text-slate-500 uppercase mb-1">Cauzione</label><span id="d-cau" class="text-xl font-bold">-- €</span></div>
+            <div class="box p-3"><label class="block text-[10px] text-gray-500 uppercase">Credito</label><span id="d-cred" class="text-xl font-bold text-green-400">-- €</span></div>
+            <div class="box p-3"><label class="block text-[10px] text-gray-500 uppercase">Operazioni</label><span id="d-op" class="text-xl font-bold text-orange-400">--</span></div>
+            <div class="box p-3"><label class="block text-[10px] text-gray-500 uppercase">Tot. Ingr.</label><span id="d-tot" class="text-xl font-bold text-blue-400">-- €</span></div>
+            <div class="box p-3"><label class="block text-[10px] text-gray-500 uppercase">UID</label><span id="d-uid" class="text-[10px] font-bold block mt-2 tracking-tighter text-slate-400">--</span></div>
         </div>
 
-        <div class="box p-6 border-t-4 border-purple-600">
-            <div class="flex flex-col md:flex-row gap-4 items-end">
-                <div class="flex-1 w-full">
-                    <label class="block text-[10px] text-slate-500 uppercase mb-2">Importo Ricarica</label>
-                    <select id="amountSel" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none focus:border-purple-500">
-                        <option value="100">1.00 €</option>
-                        <option value="500">5.00 €</option>
-                        <option value="1000" selected>10.00 €</option>
-                    </select>
+        <div class="box p-6 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <select id="amountSel" class="bg-slate-900 border border-slate-700 rounded-lg p-3 outline-none text-sm">
+                    <option value="100">1.00 €</option>
+                    <option value="500">5.00 €</option>
+                    <option value="1000" selected>10.00 €</option>
+                </select>
+                <div class="flex gap-2">
+                    <button onclick="startAnalyze()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-lg text-xs">ANALISI</button>
+                    <button onclick="startReload()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-lg text-xs uppercase">Ricarica</button>
                 </div>
-                <button onclick="startAnalyze()" class="bg-slate-700 hover:bg-slate-600 text-white px-8 py-3 rounded-lg font-bold btn-action">ANALISI</button>
-                <button onclick="startReload()" class="bg-purple-600 hover:bg-purple-500 text-white px-8 py-3 rounded-lg font-bold btn-action shadow-lg shadow-purple-900/20">RICARICA</button>
             </div>
         </div>
 
-        <div id="terminal" class="terminal mt-6 p-4 rounded-lg shadow-inner">
-            <div class="text-slate-700 italic underline mb-2">Console Debug Output:</div>
+        <div id="terminal" class="terminal p-4 rounded-lg shadow-inner">
+            <div class="text-slate-600 italic text-[9px] mb-2">Attesa connessione...</div>
         </div>
     </div>
 
@@ -69,43 +50,41 @@
         const TX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
         const RX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 
-        let device, txCharacteristic, rxCharacteristic;
+        let tx, rx, device;
 
-        // --- Logica Microel Trasportata dallo Sketch ---
-
-        function decode16(low, high) { 
-            return ((high << 8) | low); [cite: 2]
-        }
-
+        // --- Logica Calcolo Chiavi (Source: 14, 15) ---
         function deriveKeys(uid) {
-            let sommaUID = 0;
-            for(let i=0; i<4; i++) sommaUID += uid[i]; [cite: 14]
-            let b6_v = sommaUID & 0xFF; [cite: 14]
-            let b7_k = (b6_v >> 4) & 0x0F; [cite: 14]
-            let b8_k = b6_v & 0x0F; [cite: 14]
-            
-            let cond = (b7_k==0x0 || (b7_k==0x1 && b8_k!=0xF) || b7_k==0x4 || (b7_k==0x5 && b8_k!=0xF) || b7_k==0x8 || (b7_k==0x9 && b8_k!=0xF) || b7_k==0xC || (b7_k==0xD && b8_k!=0xF) || b6_v==0x3F || b6_v==0x7F || b6_v==0xBF || b6_v==0xFF); [cite: 14]
-            
-            let kByte = cond ? (b6_v + 1) : (b6_v + 0x41); [cite: 14, 15]
-            let kA = [kByte, kByte ^ 0x93, kByte ^ 0xA6, kByte ^ 0x74, kByte ^ 0x2A, kByte ^ 0xF8]; [cite: 15]
-            let kB = kA.map(b => (~b) & 0xFF); [cite: 15]
-            return { kA, kB };
+            let sommaUID = uid.reduce((a, b) => a + b, 0);
+            let b6_v = sommaUID & 0xFF;
+            let b7_k = (b6_v >> 4) & 0x0F;
+            let b8_k = b6_v & 0x0F;
+            let cond = (b7_k==0x0 || (b7_k==0x1 && b8_k!=0xF) || b7_k==0x4 || (b7_k==0x5 && b8_k!=0xF) || b7_k==0x8 || (b7_k==0x9 && b8_k!=0xF) || b7_k==0xC || (b7_k==0xD && b8_k!=0xF) || b6_v==0x3F || b6_v==0x7F || b6_v==0xBF || b6_v==0xFF);
+            let kByte = cond ? (b6_v + 1) : (b6_v + 0x41);
+            let kA = [kByte, kByte ^ 0x93, kByte ^ 0xA6, kByte ^ 0x74, kByte ^ 0x2A, kByte ^ 0xF8];
+            return kA;
         }
 
-        // --- Comunicazione Chameleon ---
-
-        async function sendCommand(cmdId, data = []) {
-            let frame = [0x11, 0xEF, cmdId & 0xFF, (cmdId >> 8) & 0xFF, data.length & 0xFF, (data.length >> 8) & 0xFF, ...data];
-            let lrc = 0;
-            frame.forEach(b => lrc ^= b);
-            frame.push(lrc);
-            await txCharacteristic.writeValue(new Uint8Array(frame));
-            debugLog(`-> CMD ${cmdId.toString(16).toUpperCase()}: ${frame.map(b => b.toString(16).padStart(2,'0')).join(' ')}`);
+        // --- Decodifica Microel (Source: 2, 20, 21, 23) ---
+        function parseBlock4(block) {
+            const op = (block[1] << 8) | block[0];
+            const tot = ((block[3] << 8) | block[2]) / 10.0;
+            const cred = ((block[6] << 8) | block[5]) / 100.0;
+            
+            document.getElementById('d-cred').innerText = cred.toFixed(2) + " €";
+            document.getElementById('d-op').innerText = op;
+            document.getElementById('d-tot').innerText = tot.toFixed(1) + " €";
+            log(`DECODED: Credito ${cred}€, Operazioni ${op}`, "text-green-400");
         }
 
-        document.getElementById('btn-connect').onclick = async () => {
+        function log(msg, color = "text-slate-500") {
+            const t = document.getElementById('terminal');
+            t.innerHTML += `<div class="${color}">[${new Date().toLocaleTimeString().split(' ')[0]}] ${msg}</div>`;
+            t.scrollTop = t.scrollHeight;
+        }
+
+        async function connect() {
             try {
-                debugLog("Apertura finestra Bluetooth...");
+                log("Apertura selettore Bluetooth...");
                 device = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'Chameleon' }],
                     optionalServices: [SERVICE_UUID]
@@ -113,48 +92,30 @@
                 
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
-                txCharacteristic = await service.getCharacteristic(TX_UUID);
-                rxCharacteristic = await service.getCharacteristic(RX_UUID);
+                tx = await service.getCharacteristic(TX_UUID);
+                rx = await service.getCharacteristic(RX_UUID);
 
-                await rxCharacteristic.startNotifications();
-                rxCharacteristic.oncharacteristicvaluechanged = handleRX;
+                await rx.startNotifications();
+                rx.oncharacteristicvaluechanged = (e) => {
+                    const val = new Uint8Array(e.target.value.buffer);
+                    log("<- " + Array.from(val).map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase());
+                };
 
-                document.getElementById('status-text').innerText = "🟢 Connesso";
-                document.getElementById('status-text').className = "text-green-500 font-bold uppercase text-xs";
-                document.getElementById('conn-status-border').className = "box p-4 md:col-span-2 flex justify-between items-center border-l-4 border-green-500";
-                debugLog("Chameleon Ultra pronto.");
+                log("CONNESSO!", "text-blue-400 font-bold");
+                document.getElementById('btn-connect').innerText = "ONLINE";
+                document.getElementById('btn-connect').className = "bg-green-600 text-white px-6 py-2 rounded-lg font-bold";
             } catch (err) {
-                debugLog("Errore: " + err.message);
+                log("ERRORE: " + err.message, "text-red-500");
             }
-        };
-
-        function handleRX(event) {
-            let val = new Uint8Array(event.target.value.buffer);
-            debugLog(`<- RX: ${Array.from(val).map(b => b.toString(16).padStart(2,'0')).join(' ').toUpperCase()}`);
-            // Qui andrebbe aggiunto il parser per estrarre UID e dati dai blocchi Mifare
-        }
-
-        function debugLog(msg) {
-            const term = document.getElementById('terminal');
-            const div = document.createElement('div');
-            div.className = "mb-1 text-slate-400";
-            div.innerHTML = `<span class="text-blue-900 mr-2">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
-            term.appendChild(div);
-            term.scrollTop = term.scrollHeight;
         }
 
         async function startAnalyze() {
-            debugLog("Avvio procedura analisi Mifare...");
-            // Procedura: 1. Scan UID -> 2. Derive Keys -> 3. Auth Sector 1 -> 4. Read Block 4
-            // Nota: I comandi specifici dipendono dal firmware Chameleon (es. 0x03F6 per scan HF)
+            if(!tx) return log("Non connesso!", "text-red-500");
+            log("Richiesta SCAN HF (UID)...", "text-yellow-500");
+            // Comando Chameleon per Scan UID (11 EF F6 03...)
         }
 
-        async function startReload() {
-            const amount = document.getElementById('amountSel').value;
-            if(!confirm(`Confermi ricarica di ${amount/100} €?`)) return; [cite: 12]
-            debugLog(`Esecuzione ricarica importo: ${amount}`);
-            // Logica di scrittura blocco 4-5 e backup su 6 [cite: 5, 30, 42]
-        }
+        document.getElementById('btn-connect').onclick = connect;
     </script>
 </body>
 </html>
